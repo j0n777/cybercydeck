@@ -1,0 +1,14 @@
+[Unit]
+Description=CyberCYDeck: status do cyberdeck para a tela CYD
+After=network.target ModemManager.service gpsd.service
+
+[Service]
+ExecStart=/usr/bin/python3 /opt/cybercydeck/deckd.py --config /etc/deckd.ini
+Restart=always
+RestartSec=5
+# acesso a /dev/ttyUSB* e I2C sem rodar como root
+User=deck
+SupplementaryGroups=dialout i2c
+
+[Install]
+WantedBy=multi-user.target

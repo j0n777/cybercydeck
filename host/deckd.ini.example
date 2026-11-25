@@ -1,0 +1,31 @@
+# /etc/deckd.ini — copie este arquivo e ajuste. Tudo é opcional.
+[deck]
+# porta da CYD; "auto" procura o chip CH340 (1a86:7523) no USB
+port = auto
+interval = 3
+# nome mostrado na tela (padrão: hostname)
+# name = zero2w
+
+[battery]
+# auto | sysfs | ina219 | off
+source = auto
+ina219_bus = 1
+ina219_addr = 0x40
+# células de Li-ion em série (2 = duas 18650 em série)
+cells = 2
+v_empty = 3.30
+v_full = 4.15
+low_pct = 15
+
+[lte]
+# auto usa o ModemManager (mmcli) se existir; "no" desliga
+enabled = auto
+
+[gps]
+# auto usa o gpsd em localhost:2947 se existir
+enabled = auto
+
+[mesh]
+# porta do nó Meshtastic no USB (use /dev/serial/by-id/... pra não trocar com a CYD)
+# port = /dev/serial/by-id/usb-...
+max_msgs = 3

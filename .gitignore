@@ -1,0 +1,7 @@
+.pio/
+__pycache__/
+*.pyc
+.env
+*.ini
+!platformio.ini
+!host/deckd.ini.example

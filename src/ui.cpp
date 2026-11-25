@@ -489,7 +489,7 @@ static void drawAgendaCard(int x, int y) {
   card(x, y, 151, 76);
   int tx = x + 8;
   text(tx, y + 5, "AGENDA", F_CS12, C_ORT, C_CARD);
-  if (!live.agN) { wrap(tx, y + 24, 135, live.plErr.length() ? live.plErr : String("Nada marcado"), F_BM13, C_MUTED, C_CARD, 16, 2); return; }
+  if (!live.agN) { String e = cfg.icalUrl.length() ? live.icErr : live.plErr; wrap(tx, y + 24, 135, e.length() ? e : String("Nada marcado"), F_BM13, C_MUTED, C_CARD, 16, 2); return; }
   wrap(tx, y + 21, 135, live.agT[0], F_BS13, C_INK, C_CARD, 16, 2);
   text(tx, y + 58, countdown(live.agQ[0]), F_BM11, C_MUTED, C_CARD);
   if (live.agN > 1) text(x + 143, y + 58, "+" + String(live.agN - 1), F_BM11, C_MUTED, C_CARD, 2);
@@ -858,13 +858,20 @@ static void plFoot() {
   String f = live.plOk ? "feed · atualizado " + hhmm(live.plAt) : (live.plErr.length() ? live.plErr : String("aguardando o feed"));
   text(8, 222, f, F_BM11, live.plOk ? C_MUTED : C_ORT, C_BG);
 }
+static void agFoot() {
+  if (!cfg.icalUrl.length()) { plFoot(); return; }
+  String f = live.icErr.length() ? live.icErr : live.icOk ? "agenda iCal · atualizada " + hhmm(live.icAt) : String("lendo a agenda…");
+  text(8, 222, f, F_BM11, live.icErr.length() ? C_ORT : C_MUTED, C_BG);
+}
 static void drawAgenda() {
   header("AGENDA");
   if (!live.agN) {
     card(8, 32, 304, 90);
-    text(18, 42, live.plOk ? "Nada nos próximos dias" : "Agenda ainda não chegou", F_BS16, C_INK, C_CARD);
-    wrap(18, 66, 284, live.plOk ? "Os compromissos vêm do feed do seu servidor." : "Configure a URL do feed em Config › Pelo celular (veja docs/feed.md).", F_BM13, C_MUTED, C_CARD, 17, 3);
-    plFoot();
+    bool ok = cfg.icalUrl.length() ? live.icOk : live.plOk;
+    text(18, 42, ok ? "Nada nos próximos dias" : "Agenda ainda não chegou", F_BS16, C_INK, C_CARD);
+    wrap(18, 66, 284, ok ? (cfg.icalUrl.length() ? "Nada marcado nas próximas duas semanas." : "Os compromissos vêm do feed do seu servidor.")
+                         : "Cole o link iCal da sua agenda (Google: Endereço secreto no formato iCal) em Config › Pelo celular.", F_BM13, C_MUTED, C_CARD, 17, 3);
+    agFoot();
     return;
   }
   for (int i = 0; i < live.agN; i++) {
@@ -877,7 +884,7 @@ static void drawAgenda() {
     text(18, y + 31, whenLabel(live.agQ[i], live.agDia[i]), F_BM13, first ? C_PEACH : C_MUTED, bg);
     text(302, y + 10, countdown(live.agQ[i]), F_BS13, first ? C_OR : C_ORT, bg, 2);
   }
-  plFoot();
+  agFoot();
 }
 static void drawNews() {
   header("MANCHETES");

@@ -28,6 +28,8 @@ jobs:
         with:
           path: ~/.platformio
           key: pio-${{ hashFiles('platformio.ini') }}
+      - name: Test the iCal reader
+        run: g++ -Wall -o /tmp/ical-test tests/ical/teste.cpp src/ical.cpp && /tmp/ical-test tests/ical/exemplo.ics
       - name: Build
         run: |
           pip install platformio "esptool>=5,<6"

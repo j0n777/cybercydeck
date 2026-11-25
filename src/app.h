@@ -19,6 +19,7 @@ struct Config {
   String phUrl, phPass;       // Pi-hole v6 (local network)
   uint16_t mods = 0xF3F;      // enabled modules, see M_* below (IR and Mesh off by default)
   String feedToken;           // sent as "Authorization: Bearer <token>" to the feed
+  String icalUrl;             // calendar .ics link (Google: "secret address in iCal format"); replaces the feed agenda
   bool alertBeep = false;     // beep on alerts (never at night)
   bool nightDim = true;       // dim the backlight from 23h to 7h
   String haUrl, haToken;
@@ -73,6 +74,7 @@ struct LiveData {
   // summary feed published by your server (see docs/feed.md)
   bool plOk = false; uint32_t plAt = 0; String plErr; String saude;   // saude: ok | alerta | critico
   int agN = 0; String agT[3]; uint32_t agQ[3] = {0}; bool agDia[3] = {false};
+  bool icOk = false; uint32_t icAt = 0; String icErr;   // agenda read from the iCal link
   int nwN = 0; String nwT[5], nwF[5];
   int mqN = 0; String mqNome[5]; int mqCpu[5] = {0}, mqRam[5] = {0}, mqTemp[5] = {0}, mqDisk[5] = {0}; uint32_t mqAge[5] = {0}; bool mqOn[5] = {false};
   float iaCusto = -1; double iaTokens = -1; int iaN = 0; String iaNome[4]; float iaC[4] = {0};

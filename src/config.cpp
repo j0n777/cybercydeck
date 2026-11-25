@@ -21,6 +21,7 @@ void configLoad() {
   cfg.mods = prefs.getUShort("mods", 0xF3F);
   bool migrate = prefs.getUChar("modsv", 0) < 3;
   cfg.feedToken = gs("feedtok");
+  cfg.icalUrl = gs("ical");
   cfg.alertBeep = prefs.getBool("abeep", false);
   cfg.nightDim = prefs.getBool("night", true);
   cfg.haUrl = gs("haurl"); cfg.haToken = gs("hatok");
@@ -80,6 +81,7 @@ void configSave() {
   prefs.putUShort("mods", cfg.mods);
   prefs.putUChar("modsv", 3);
   prefs.putString("feedtok", cfg.feedToken);
+  prefs.putString("ical", cfg.icalUrl);
   prefs.putBool("abeep", cfg.alertBeep);
   prefs.putBool("night", cfg.nightDim);
   prefs.putString("haurl", cfg.haUrl); prefs.putString("hatok", cfg.haToken);

@@ -303,8 +303,8 @@ static void fetchPlaca() {
   if ((d["ok"].is<bool>() && !d["ok"].as<bool>()) || (p["pendente"] | false)) { lock(); live.plErr = "servidor ainda não publicou"; live.plOk = false; unlock(); return; }
   lock();
   live.saude = String((const char*)(p["saude"] | ""));
-  live.agN = 0;
-  for (JsonObject a : p["agenda"].as<JsonArray>()) {
+  if (!cfg.icalUrl.length()) live.agN = 0;   // with an iCal link the agenda comes from there
+  if (!cfg.icalUrl.length()) for (JsonObject a : p["agenda"].as<JsonArray>()) {
     if (live.agN >= 3) break;
     live.agT[live.agN] = String((const char*)(a["t"] | ""));
     live.agQ[live.agN] = parseIso(a["quando"] | "");
@@ -541,6 +541,9 @@ static void handleRoot() {
   h += String("<label class=chk><input type=checkbox name=night") + (cfg.nightDim ? " checked" : "") + "> Modo noite (brilho baixo das 23h às 7h)</label>";
   h += String("<label class=chk><input type=checkbox name=abeep") + (cfg.alertBeep ? " checked" : "") + "> Bipe nos avisos (nunca de madrugada)</label>";
   h += F("<input type=hidden name=opts_form value=1>");
+  h += F("<h2>AGENDA <small>(link iCal: no Google Agenda, Configurações do calendário › Integrar agenda › Endereço secreto no formato iCal)</small></h2>");
+  h += secretField("ical", "Link .ics da agenda (substitui a agenda do feed)", cfg.icalUrl.length() > 0, "https://calendar.google.com/calendar/ical/.../basic.ics");
+  if (cfg.icalUrl.length()) h += F("<label class=chk><input type=checkbox name=icalclr> Remover o link da agenda</label>");
   h += F("<h2>SEGUIDORES</h2>");
   h += field("n8n", "URL dos seguidores (JSON: total, instagram, youtube…)", cfg.n8nUrl, "url", "https://seu-servidor/seguidores.json");
   h += F("<h2>PI-HOLE</h2>");
@@ -589,6 +592,7 @@ static void handleSave() {
   take("n8n", cfg.n8nUrl);
   take("phurl", cfg.phUrl); takeSecret("phpass", cfg.phPass);
   take("nome", cfg.nome); take("feed", cfg.feedUrl); takeSecret("feedtok", cfg.feedToken);
+  takeSecret("ical", cfg.icalUrl); if (server.hasArg("icalclr")) cfg.icalUrl = "";
   if (server.hasArg("opts_form")) { cfg.nightDim = server.hasArg("night"); cfg.alertBeep = server.hasArg("abeep"); }
   if (server.hasArg("mods_form")) {
     uint16_t m = 0;
@@ -623,7 +627,8 @@ static void handleStatus() {
   server.send(200, "application/json", s);
 }
 
-// ---------- firmware update over Wi-Fi (POST /update?pin=XXXXXXXX, multipart field "fw") ----------
+// ---------- firmware update over Wi-Fi (POST /update, header X-Pin, multipart field "fw") ----------
+// The PIN goes in a header, never in the URL, so it does not end up in the browser history.
 static bool otaAuth = false, otaOk = false;
 static void handleUpdatePage() {
   String h = F("<!doctype html><html lang=pt-BR><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'>"
@@ -633,7 +638,9 @@ static void handleUpdatePage() {
                "button{width:100%;height:48px;border:0;border-radius:10px;background:#16191D;color:#fff;font:600 16px system-ui}"
                "small{color:#5B6570}</style><main><h2>Atualizar firmware</h2>"
                "<p><small>Versão atual: " FW_VERSION ". Use o arquivo <b>-ota.bin</b> (não o merged).</small></p>"
-               "<form method=post enctype=multipart/form-data onsubmit=\"this.action='/update?pin='+encodeURIComponent(this.pin.value);this.b.disabled=true;this.b.textContent='Enviando… não desligue';\">"
+               "<form id=f onsubmit=\"event.preventDefault();var fd=new FormData();fd.append('fw',this.fw.files[0]);this.b.disabled=true;this.b.textContent='Enviando… não desligue';"
+               "fetch('/update',{method:'POST',headers:{'X-Pin':this.pin.value},body:fd}).then(function(r){return r.text()}).then(function(t){document.body.innerHTML=t})"
+               ".catch(function(){document.body.innerHTML='<p style=padding:20px>Falhou o envio. Recarregue e tente de novo.</p>'});\">"
                "<label>Senha do painel</label><input name=pin type=password inputmode=numeric>"
                "<label>Arquivo .bin</label><input name=fw type=file accept=.bin>"
                "<button name=b>Enviar e reiniciar</button></form></main></html>");
@@ -642,7 +649,7 @@ static void handleUpdatePage() {
 static void handleUpdateUpload() {
   HTTPUpload& up = server.upload();
   if (up.status == UPLOAD_FILE_START) {
-    otaAuth = apMode || server.arg("pin") == cfg.apPass;
+    otaAuth = apMode || server.header("X-Pin") == cfg.apPass;
     otaOk = false;
     if (!otaAuth) { Serial.println("[ota] senha errada"); return; }
     Serial.printf("[ota] recebendo %s\n", up.filename.c_str());
@@ -663,6 +670,8 @@ static void handleUpdateDone() {
 }
 
 static void portalBegin() {
+  static const char* hdrs[] = {"X-Pin"};
+  server.collectHeaders(hdrs, 1);
   server.on("/update", HTTP_GET, handleUpdatePage);
   server.on("/update", HTTP_POST, handleUpdateDone, handleUpdateUpload);
   server.on("/", HTTP_GET, handleRoot);
@@ -780,10 +789,62 @@ static void fetchIssPass() {
   Serial.printf("[net] iss next pass %s el %d\n", found ? "ok" : "none", live.issMaxEl);
 }
 
+static void netHeartbeatTouch();
+static bool timeIsSet() { time_t t; time(&t); return t > 1700000000; }
+// ---------- agenda from an iCal (.ics) link ----------
+// The calendar file can hold years of events: it is parsed while it downloads, nothing is kept but the next ones.
+#include "ical.h"
+class IcsSink : public Stream {   // HTTPClient::writeToStream wants a Stream; only write() is used
+ public:
+  int available() override { return 0; }
+  int read() override { return -1; }
+  int peek() override { return -1; }
+  void flush() override {}
+  IcsAgenda* a; size_t total = 0; uint32_t t0 = 0; bool tooBig = false;
+  size_t write(uint8_t c) override { return write(&c, 1); }
+  size_t write(const uint8_t* b, size_t n) override {
+    if (total > 4UL * 1024 * 1024 || millis() - t0 > 60000) { tooBig = true; return 0; }   // stop the download
+    a->feed((const char*)b, n); total += n;
+    if ((total & 0xFFFF) < n) netHeartbeatTouch();
+    return n;
+  }
+};
+static void fetchIcal() {
+  time_t now; time(&now);
+  if (now < 1700000000) return;                 // needs the right time to know what is "next"
+  static IcsAgenda ag;                          // ~4 KB of state: not on the task stack
+  ag.begin(now, now + 14L * 86400, -3 * 3600);
+  HTTPClient http;
+  WiFiClientSecure sec;
+  WiFiClient plain;
+  bool ok = cfg.icalUrl.startsWith("https") ? (sec.setCACert(ROOT_CAS), http.begin(sec, cfg.icalUrl)) : http.begin(plain, cfg.icalUrl);
+  if (!ok) { lock(); live.icErr = "link da agenda inválido"; unlock(); return; }
+  http.setTimeout(10000);
+  http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+  int code = http.GET();
+  IcsSink sink; sink.a = &ag; sink.t0 = millis();
+  int got = code == 200 ? http.writeToStream(&sink) : -1;
+  http.end();
+  if (code != 200 || (got < 0 && !sink.tooBig)) {
+    Serial.printf("[net] ical -> %d (%d)\n", code, got);
+    lock(); live.icErr = code == 404 || code == 401 || code == 403 ? "link da agenda recusado (troque o link)" : "agenda sem resposta"; unlock();
+    return;
+  }
+  IcsEvent ev[3];
+  int n = ag.finish(ev, 3);
+  lock();
+  live.agN = n;
+  for (int i = 0; i < n; i++) { live.agT[i] = ev[i].title; live.agQ[i] = (uint32_t)ev[i].start; live.agDia[i] = ev[i].allDay; }
+  live.icOk = true; live.icAt = now; live.icErr = sink.tooBig ? "agenda muito grande: só parte foi lida" : "";
+  unlock();
+  Serial.printf("[net] ical %u KB, %ld eventos, %d próximos\n", (unsigned)(sink.total / 1024), ag.events, n);
+}
+
 // ---------- network task ----------
 volatile uint32_t netHeartbeat = 0;   // read by the UI task: software watchdog for this task
+static void netHeartbeatTouch() { netHeartbeat = millis(); }
 static void netTask(void*) {
-  uint32_t lastBtc = 0, lastWx = 0, lastSoc = 0, lastHa = 0, lastPh = 0, lastPl = 0, lastRd = 0, lastNetCheck = 0, wifiStart = millis();
+  uint32_t lastBtc = 0, lastWx = 0, lastSoc = 0, lastHa = 0, lastPh = 0, lastPl = 0, lastRd = 0, lastIc = 0, lastNetCheck = 0, wifiStart = millis();
   bool hermesStarted = false;
   for (;;) {
     netHeartbeat = millis();
@@ -832,12 +893,13 @@ static void netTask(void*) {
     }
     if (wifiUp) {
       uint32_t now = millis();
-      if (refreshReq) { refreshReq = false; lastBtc = lastWx = lastSoc = lastHa = lastPh = lastPl = 0; }
+      if (refreshReq) { refreshReq = false; lastBtc = lastWx = lastSoc = lastHa = lastPh = lastPl = lastIc = 0; }
       if (placaReq) { placaReq = false; if (now - lastPl > 60000UL) lastPl = 0; }
       // one fetch per loop pass, so the idle task (and its watchdog) gets CPU between TLS handshakes
       if (haToggleReq >= 0) { int i = haToggleReq; haToggleReq = -1; haToggle(i); uiRequestRedraw(); }
       else if (MOD_ON(M_BTC) && (!lastBtc || now - lastBtc > (uint32_t)cfg.btcEvery * 1000)) { fetchBtc(); lastBtc = millis(); uiRequestRedraw(); }
-      else if ((MOD_ON(M_AGENDA) || MOD_ON(M_NEWS) || MOD_ON(M_MAQ)) && (!lastPl || now - lastPl > 5UL * 60 * 1000)) { fetchPlaca(); lastPl = millis(); uiRequestRedraw(); }
+      else if (((MOD_ON(M_AGENDA) && !cfg.icalUrl.length()) || MOD_ON(M_NEWS) || MOD_ON(M_MAQ)) && cfg.feedUrl.length() && (!lastPl || now - lastPl > 5UL * 60 * 1000)) { fetchPlaca(); lastPl = millis(); uiRequestRedraw(); }
+      else if (MOD_ON(M_AGENDA) && cfg.icalUrl.length() && timeIsSet() && (!lastIc || now - lastIc > 15UL * 60 * 1000)) { fetchIcal(); lastIc = millis(); uiRequestRedraw(); }
       else if (MOD_ON(M_CLIMA) && (!lastWx || now - lastWx > 30UL * 60 * 1000)) { fetchWeather(); lastWx = millis(); uiRequestRedraw(); }
       else if (MOD_ON(M_REDES) && (!lastSoc || now - lastSoc > 15UL * 60 * 1000)) { fetchSocial(); lastSoc = millis(); uiRequestRedraw(); }
       else if (MOD_ON(M_PIHOLE) && cfg.phUrl.length() && (!lastPh || now - lastPh > (curScreen == S_PIHOLE ? 15000UL : 120000UL))) { fetchPihole(); lastPh = millis(); uiRequestRedraw(); }

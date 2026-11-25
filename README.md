@@ -27,6 +27,9 @@ Firmware para a **ESP32-2432S028 ("Cheap Yellow Display", CYD)** que funciona de
 | `docs/deck-protocol.md` | formato da linha `deck {json}` |
 | `docs/feed.md` | JSON do feed (agenda, manchetes, máquinas, uso de IA) e dos seguidores |
 | `docs/hardware.md` | lista de peças do cyberdeck e observações |
+| `n8n/` | workflow do feed (máquinas, uso de IA) para importar no n8n |
+| `site/` | página de gravação pelo navegador (publicada no GitHub Pages) |
+| `tests/` | teste do leitor de iCal, roda no computador e no GitHub Actions |
 
 ## Gravar a CYD
 **Pelo navegador (mais fácil):** abra **https://j0n777.github.io/cybercydeck/** no Chrome ou no Edge de um computador,
@@ -34,7 +37,7 @@ ligue a placa no USB e clique em instalar. A página sempre traz a versão mais 
 CyberCYDeck, deixe desmarcado "Erase device": Wi-Fi e configurações continuam.
 
 **Pelo Wi-Fi:** `http://<ip-da-placa>/update`, com o arquivo `cybercydeck-<versão>-ota.bin` da
-[última release](https://github.com/j0n777/cybercydeck/releases/latest) e o PIN do portal.
+[última release](https://github.com/j0n777/cybercydeck/releases/latest) e o PIN do portal (vai num cabeçalho, nunca no endereço).
 
 **Pelo PlatformIO:**
 ```
@@ -49,6 +52,16 @@ Primeiro uso: calibrar o toque (4 alvos) → escolher a rede em **Config › Wi-
 na quarta pergunta qual substituir). O resto (feed, Pi-hole, Home Assistant) se preenche pelo celular: rede **CyberCYDeck** ou o IP da placa. Tudo fica salvo na placa. Atualizações depois: `http://<ip-da-placa>/update`.
 
 Sem Wi-Fi configurado a placa funciona igual como tela do deck.
+
+## Agenda
+No Google Agenda, abra **Configurações** › o seu calendário › **Integrar agenda** e copie o
+**Endereço secreto no formato iCal**. Cole no portal da placa, em **Agenda**. A placa lê o arquivo a cada 15 min,
+enquanto baixa, e guarda só os próximos compromissos (eventos repetidos, cancelados e remarcados incluídos).
+Serve qualquer link `.ics` (Outlook, Nextcloud, Proton...). Esse endereço dá acesso à agenda: não compartilhe; se vazar,
+use **Redefinir** no Google. Sem link, a agenda vem do feed.
+
+## Máquinas e uso de IA (n8n)
+Veja [`n8n/README.md`](n8n/README.md): um workflow pronto para importar, mais o `host/sinal.py` que cada máquina roda.
 
 ## Aprovações do agente e avisos
 Com o [Hermes Gadget](https://github.com/Adolanium/hermes-gadget-sdk) pareado, as perguntas do Hermes (comando perigoso,
@@ -78,7 +91,7 @@ journalctl -u deckd -f
 Teste sem a placa: `python3 host/deckd.py --stdout --once`.
 
 ## Comandos pela USB (115200)
-`status`, `cfg`, `set <chave> <valor>` (nome, feed, token, n8n, phurl, phpass, city, mods, night, beep, theme, anim, apagao),
+`status`, `cfg`, `set <chave> <valor>` (nome, feed, token, ical, n8n, phurl, phpass, city, mods, night, beep, theme, anim, apagao),
 `nav <tela>`, `shot`, `tap x y`, `led <cor>`, `beep`, `restart`, `factory`, `deck {json}` (usado pelo deckd),
 e para testes `hermes {json}` (injeta uma mensagem do Hermes, ex.: um `prompt`) e `notify <texto>`.
 

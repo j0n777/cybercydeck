@@ -29,9 +29,22 @@ Firmware para a **ESP32-2432S028 ("Cheap Yellow Display", CYD)** que funciona de
 | `docs/hardware.md` | lista de peças do cyberdeck e observações |
 
 ## Gravar a CYD
+**Pelo navegador (mais fácil):** abra **https://j0n777.github.io/cybercydeck/** no Chrome ou no Edge de um computador,
+ligue a placa no USB e clique em instalar. A página sempre traz a versão mais nova. Para atualizar uma placa que já usa o
+CyberCYDeck, deixe desmarcado "Erase device": Wi-Fi e configurações continuam.
+
+**Pelo Wi-Fi:** `http://<ip-da-placa>/update`, com o arquivo `cybercydeck-<versão>-ota.bin` da
+[última release](https://github.com/j0n777/cybercydeck/releases/latest) e o PIN do portal.
+
+**Pelo PlatformIO:**
 ```
-pio run -t upload          # ou gere o .bin com `pio run` e grave em 0x10000
+pio run -t upload          # ou grave o firmware.bin em 0x10000 com o esptool
 ```
+A imagem `-full.bin` das releases vai em 0x0 e apaga as configurações salvas.
+
+### Publicar uma versão
+Mude `FW_VERSION` em `src/app.h` e crie a tag (`git tag v0.4.0 && git push origin v0.4.0`). O GitHub Actions compila,
+anexa os `.bin` na release e atualiza a página de gravação.
 Primeiro uso: calibrar o toque (4 alvos) → escolher a rede em **Config › Wi-Fi** (procura as redes, teclado na tela, guarda até 3;
 na quarta pergunta qual substituir). O resto (feed, Pi-hole, Home Assistant) se preenche pelo celular: rede **CyberCYDeck** ou o IP da placa. Tudo fica salvo na placa. Atualizações depois: `http://<ip-da-placa>/update`.
 

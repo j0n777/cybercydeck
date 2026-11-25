@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CyberCYDeck · gravar a placa</title>
+<meta name="description" content="Grave o firmware CyberCYDeck na ESP32-2432S028 (Cheap Yellow Display) direto pelo navegador.">
+<script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+<style>
+  :root { --bg: #f4f5f1; --card: #fff; --line: #dcdfd6; --ink: #14170f; --muted: #626a60; --green: #167a41; --amber: #a15c06; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 720px; margin: 0 auto; padding: 40px 20px 64px; }
+  .win { background: var(--card); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .bar { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--line); font: 600 14px ui-monospace, "IBM Plex Mono", Menlo, monospace; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  .body { padding: 24px; }
+  h1 { font-size: 28px; margin: 0 0 4px; }
+  .ver { font: 600 14px ui-monospace, Menlo, monospace; color: var(--green); }
+  p { margin: 12px 0; }
+  ol { padding-left: 22px; } li { margin: 8px 0; }
+  .note { border-left: 3px solid var(--amber); background: #fbf6ec; padding: 10px 14px; border-radius: 4px; font-size: 15px; }
+  .install { margin: 24px 0 8px; }
+  esp-web-install-button { --esp-tools-button-color: #167a41; --esp-tools-button-text-color: #fff; --esp-tools-button-border-radius: 8px; }
+  a { color: var(--green); }
+  small { color: var(--muted); }
+  code { font: 14px ui-monospace, Menlo, monospace; background: #eef0ea; padding: 1px 5px; border-radius: 4px; }
+</style>
+</head>
+<body>
+<main>
+  <div class="win">
+    <div class="bar"><span class="dot" style="background:#ffb020"></span><span class="dot" style="background:#9aa39b"></span><span class="dot" style="background:#2fd675"></span>&nbsp;~/cybercydeck/gravar</div>
+    <div class="body">
+      <h1>Gravar o CyberCYDeck</h1>
+      <div class="ver">versão __VERSION__ · ESP32-2432S028 (CYD)</div>
+      <p>Painel de mesa e tela de cyberdeck para a Cheap Yellow Display. Esta página grava a versão mais nova direto pelo navegador, sem instalar nada.</p>
+
+      <div class="install">
+        <esp-web-install-button manifest="manifest.json">
+          <span slot="unsupported">Seu navegador não tem Web Serial. Use o <b>Chrome</b> ou o <b>Edge</b> num computador.</span>
+          <span slot="not-allowed">A gravação só funciona em página https.</span>
+        </esp-web-install-button>
+      </div>
+
+      <ol>
+        <li>Ligue a CYD no computador com um cabo USB <b>de dados</b>.</li>
+        <li>Clique em <b>Connect</b> e escolha a porta <b>USB-SERIAL CH340</b>.</li>
+        <li>Clique em <b>Install</b>. Leva cerca de 1 minuto; a placa reinicia sozinha no fim.</li>
+      </ol>
+
+      <p class="note"><b>Atualizando uma placa que já usa o CyberCYDeck?</b> Deixe <b>desmarcada</b> a opção de apagar o aparelho
+        (“Erase device”). Assim as redes Wi-Fi, a calibração do toque e as configurações continuam lá.
+        Marque só na primeira gravação ou se quiser começar do zero.</p>
+
+      <p><small>Se a porta não aparecer: troque o cabo (muitos só carregam) e confira o driver CH340 no Gerenciador de Dispositivos do Windows.
+        Depois da primeira gravação, as próximas atualizações também podem ir pelo Wi-Fi, em <code>http://IP-da-placa/update</code>.</small></p>
+      <p><small><a href="https://github.com/j0n777/cybercydeck">Código no GitHub</a> ·
+        <a href="https://github.com/j0n777/cybercydeck/releases/latest">arquivos .bin desta versão</a> ·
+        gravação feita com <a href="https://esphome.github.io/esp-web-tools/">ESP Web Tools</a> · licença MIT</small></p>
+    </div>
+  </div>
+</main>
+</body>
+</html>

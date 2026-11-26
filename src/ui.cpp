@@ -1914,6 +1914,30 @@ bool uiScreenshot(Stream& out) {
   return true;
 }
 
+// 320x240 BMP, 16-bit RGB565 (BI_BITFIELDS), rows top-down: opens in browsers and image tools
+bool uiScreenshotBmp(Print& out) {
+  uint8_t h[66] = {'B', 'M'};
+  auto le32 = [&](int o, uint32_t v) { h[o] = v; h[o + 1] = v >> 8; h[o + 2] = v >> 16; h[o + 3] = v >> 24; };
+  le32(2, UI_BMP_SIZE); le32(10, 66); le32(14, 40); le32(18, 320); le32(22, (uint32_t)-240);
+  h[26] = 1; h[28] = 16; le32(30, 3); le32(34, 320 * 240 * 2);
+  le32(54, 0xF800); le32(58, 0x07E0); le32(62, 0x001F);
+  out.write(h, sizeof(h));
+  static uint8_t row[640];
+  xSemaphoreTake(dataLock, portMAX_DELAY);
+  for (yoff = 0; yoff < 240; yoff += stripH) {
+    drawScreen();
+    for (int r = 0; r < stripH && yoff + r < 240; r++) {
+      const uint8_t* src = (const uint8_t*)spr.getBuffer() + r * 320 * 2;
+      for (int x = 0; x < 640; x += 2) { row[x] = src[x + 1]; row[x + 1] = src[x]; }   // the sprite keeps the panel's byte order
+      out.write(row, sizeof(row));
+    }
+    spr.pushSprite(0, yoff);
+  }
+  xSemaphoreGive(dataLock);
+  yoff = 0;
+  return true;
+}
+
 // ---------- navigation & input ----------
 static const char* NAMES[S_COUNT] = {"home", "btc", "clima", "redes", "casa", "agente", "jogos", "snake", "ir", "mesh", "pihole", "agenda", "noticias", "maquinas", "apps", "mods", "config", "qr", "cal", "deck", "wifi", "wifiscan", "teclado", "wifirep", "inicio", "avisos", "radio", "apagao", "ssh", "tanques"};
 const char* screenName(int s) { return (s >= 0 && s < S_COUNT) ? NAMES[s] : "?"; }

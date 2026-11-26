@@ -126,6 +126,11 @@ extern Notif notifs[NOTIF_MAX];       // newest first
 extern volatile int notifN, notifUnread;
 void notifyAdd(uint8_t kind, const String& title, const String& text);   // never call while holding dataLock
 
+// ---------- screenshots over the LAN (demo mode only) ----------
+extern volatile bool demoMode;
+#define UI_BMP_SIZE (66 + 320 * 240 * 2)
+bool uiScreenshotBmp(Print& out);
+
 // ---------- log readable at /log ----------
 void logf(const char* fmt, ...);
 String logDump();

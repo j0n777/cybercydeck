@@ -64,13 +64,18 @@ use **Redefinir** no Google. Sem link, a agenda vem do feed.
 Veja [`n8n/README.md`](n8n/README.md): um workflow pronto para importar, mais o `host/sinal.py` que cada máquina roda.
 
 ## Terminal SSH
-Em **Mais › Terminal**: um terminal de verdade (53×18, cores, nano, top, less, vim) num servidor seu, com teclado na tela
-(esc, tab, ctrl, setas). Configure servidor, porta, usuário e senha no portal, em **Terminal SSH**.
-- Login só por senha: o login por chave precisaria de ~125 KB a mais e não cabe junto com as duas cópias do firmware
-  que mantêm a atualização pelo Wi-Fi. Use no servidor um usuário criado só pra isso, com pouco poder.
-- A chave do servidor fica guardada na primeira conexão; se ela mudar, a placa recusa (pode ser um ataque) até você
-  mandar esquecer no portal.
-- Enquanto o terminal está aberto, a placa pausa as buscas de dados pela internet para sobrar memória.
+Em **Mais › Terminal** abre um prompt `cyd$`. Digite `ssh usuario@192.168.0.20` (ou `ssh -p 2222 usuario@host`) e a senha
+quando pedir: é um terminal de verdade (53×18, cores, nano, top, less, vim), com teclado na tela (esc, tab, ctrl, setas).
+- A senha é pedida na hora e não fica guardada. Login por chave ficou de fora: precisaria de ~125 KB a mais e não cabe
+  junto com as duas cópias do firmware que mantêm a atualização pelo Wi-Fi.
+- Na primeira conexão com um servidor a placa mostra a identidade dele (SHA256) e pergunta se confia, como o `ssh` do
+  computador. Se a identidade mudar depois, recusa (pode ser um ataque) até você rodar `esquecer host`.
+- Outros comandos: `hosts`, `limpar`, `ajuda`; seta pra cima repete os últimos.
+- Enquanto uma sessão está aberta, a placa pausa as buscas de dados pela internet para sobrar memória.
+
+## Diagnóstico pela rede
+`http://<ip-da-placa>/status` (memória, o que carregou, erros) e `http://<ip-da-placa>/log` (últimas linhas do log).
+Não mostram senhas, tokens nem endereços com parâmetros.
 
 ## Jogos
 Snake e **Tanques**: artilharia por turno contra a placa. Toque no céu para mirar (direção e força) ou ajuste

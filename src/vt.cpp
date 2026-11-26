@@ -1,10 +1,12 @@
 #include "vt.h"
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 static int clampi(int v, int lo, int hi) { return v < lo ? lo : v > hi ? hi : v; }
 
 void Vt::reset() {
+  if (!cell) cell = (VtCell(*)[VT_COLS])calloc(VT_ROWS, sizeof(VtCell) * VT_COLS);
   fg_ = bg_ = 255; attr_ = 0;
   for (int r = 0; r < VT_ROWS; r++) clear(r, 0, VT_COLS - 1);
   cx = cy = 0; top_ = 0; bot_ = VT_ROWS - 1; sx_ = sy_ = 0;
@@ -19,13 +21,13 @@ void Vt::clear(int r, int c0, int c1) {
 
 void Vt::scrollUp(int t, int b, int n) {
   for (int k = 0; k < n; k++) {
-    for (int r = t; r < b; r++) memcpy(cell[r], cell[r + 1], sizeof(cell[r]));
+    for (int r = t; r < b; r++) memcpy(cell[r], cell[r + 1], sizeof(VtCell) * VT_COLS);
     clear(b, 0, VT_COLS - 1);
   }
 }
 void Vt::scrollDown(int t, int b, int n) {
   for (int k = 0; k < n; k++) {
-    for (int r = b; r > t; r--) memcpy(cell[r], cell[r - 1], sizeof(cell[r]));
+    for (int r = b; r > t; r--) memcpy(cell[r], cell[r - 1], sizeof(VtCell) * VT_COLS);
     clear(t, 0, VT_COLS - 1);
   }
 }
@@ -178,6 +180,7 @@ void Vt::csi(char f) {
 }
 
 void Vt::feed(const char* data, int len) {
+  if (!cell) reset();
   for (int i = 0; i < len; i++) {
     uint8_t b = (uint8_t)data[i];
     switch (st_) {

@@ -52,6 +52,7 @@ static String esc(const String& s) {
   return o;
 }
 
+extern volatile uint32_t netHeartbeat;
 static int lastHttp = 0;
 static bool httpGet(const String& url, String& body, const String& bearer = "", const char* hName = nullptr, const String& hVal = "", const char* accept = "application/json") {
   HTTPClient http;
@@ -68,7 +69,13 @@ static bool httpGet(const String& url, String& body, const String& bearer = "", 
   int code = http.GET();
   lastHttp = code;
   if (code == 200) body = http.getString();
-  else Serial.printf("[net] GET %s -> %d\n", url.substring(0, 60).c_str(), code);
+  else {
+    int q = url.indexOf('?');
+    char tls[64] = "";
+    if (code < 0 && url.startsWith("https")) sec.lastError(tls, sizeof(tls));
+    logf("[net] GET %s -> %d %s (heap %u, bloco %u)", url.substring(0, q > 0 ? min(q, 60) : 60).c_str(), code, tls,
+         ESP.getFreeHeap(), ESP.getMaxAllocHeap());
+  }
   http.end();
   vTaskDelay(pdMS_TO_TICKS(20));
   return code == 200;
@@ -130,7 +137,7 @@ static void fetchBtc() {
     unlock();
   }
   if (any) { time_t now; time(&now); live.btcAt = now; }
-  Serial.printf("[net] btc %.0f fees %d/%d/%d fng %d\n", live.btc, live.feeSlow, live.feeStd, live.feeFast, live.fng);
+  logf("[net] btc %.0f fees %d/%d/%d fng %d\n", live.btc, live.feeSlow, live.feeStd, live.feeFast, live.fng);
 }
 
 static void geocode() {
@@ -144,7 +151,7 @@ static void geocode() {
     if (d["results"][0]["latitude"].is<float>()) {
       cfg.lat = d["results"][0]["latitude"]; cfg.lon = d["results"][0]["longitude"];
       configSave();
-      Serial.printf("[net] geocoded %s -> %.4f,%.4f\n", name.c_str(), cfg.lat, cfg.lon);
+      logf("[net] geocoded %s -> %.4f,%.4f\n", name.c_str(), cfg.lat, cfg.lon);
     }
   }
 }
@@ -160,7 +167,7 @@ static bool ipLocate() {
   } else if (httpGet("http://ip-api.com/json/?fields=status,city,lat,lon", b) && !deserializeJson(d, b) && String((const char*)(d["status"] | "")) == "success") {
     ipLat = d["lat"] | NAN; ipLon = d["lon"] | NAN; ipCity = String((const char*)(d["city"] | ""));
   }
-  Serial.printf("[net] located by IP: %s %.3f,%.3f\n", ipCity.c_str(), ipLat, ipLon);
+  logf("[net] located by IP: %s %.3f,%.3f\n", ipCity.c_str(), ipLat, ipLon);
   return !isnan(ipLat);
 }
 
@@ -207,7 +214,7 @@ static void fetchWeather() {
   live.wxOk = true;
   time_t now; time(&now); live.wxAt = now;
   unlock();
-  Serial.printf("[net] weather %.1fC code %d\n", live.wxTemp, live.wxCode);
+  logf("[net] weather %.1fC code %d\n", live.wxTemp, live.wxCode);
 }
 
 static void fetchSocial() {
@@ -343,7 +350,7 @@ static void fetchPlaca() {
   if (!g) { time_t now; time(&now); g = now; }
   live.plAt = g;
   unlock();
-  Serial.printf("[net] placa saude=%s agenda=%d manchetes=%d maquinas=%d ia=%.2f\n", live.saude.c_str(), live.agN, live.nwN, live.mqN, live.iaCusto);
+  logf("[net] placa saude=%s agenda=%d manchetes=%d maquinas=%d ia=%.2f\n", live.saude.c_str(), live.agN, live.nwN, live.mqN, live.iaCusto);
 }
 
 // ---------- Pi-hole v6 (local) ----------
@@ -363,7 +370,7 @@ static bool phAuth() {
   http.end();
   JsonDocument d;
   if (code != 200 || deserializeJson(d, r) || !(d["session"]["valid"] | false)) {
-    Serial.printf("[net] pihole auth -> %d\n", code);
+    logf("[net] pihole auth -> %d\n", code);
     lock(); live.phErr = code == 401 ? "senha do Pi-hole recusada" : "Pi-hole sem resposta"; unlock();
     return false;
   }
@@ -384,7 +391,7 @@ static void fetchPihole() {
     if (code == 401) { phSid = ""; continue; }
     JsonDocument d;
     if (code != 200 || deserializeJson(d, r)) {
-      Serial.printf("[net] pihole summary -> %d\n", code);
+      logf("[net] pihole summary -> %d\n", code);
       lock(); live.phOk = false; live.phErr = "Pi-hole sem resposta"; unlock();
       return;
     }
@@ -397,7 +404,7 @@ static void fetchPihole() {
     live.phOk = live.phTotal >= 0; live.phErr = "";
     time_t now; time(&now); live.phAt = now;
     unlock();
-    Serial.printf("[net] pihole %ld queries, %ld blocked (%.1f%%)\n", live.phTotal, live.phBlocked, live.phPct);
+    logf("[net] pihole %ld queries, %ld blocked (%.1f%%)\n", live.phTotal, live.phBlocked, live.phPct);
     return;
   }
 }
@@ -416,7 +423,7 @@ static void joinBest() {
   WiFi.scanDelete();
   if (best < 0) { for (int k = 0; k < 3; k++) if (ss[k]->length()) { best = k; break; } }
   if (best < 0) return;
-  Serial.printf("[net] joining %s (rssi %d)\n", ss[best]->c_str(), bestRssi);
+  logf("[net] joining %s (rssi %d)\n", ss[best]->c_str(), bestRssi);
   WiFi.begin(ss[best]->c_str(), pw[best]->c_str());
 }
 static bool anySsid() { return cfg.ssid.length() || cfg.ssid2.length() || cfg.ssid3.length(); }
@@ -459,7 +466,7 @@ static void doScan() {
   unlock();
   WiFi.scanDelete();
   wifiScanBusy = false;
-  Serial.printf("[net] scan: %d networks\n", k);
+  logf("[net] scan: %d networks\n", k);
   uiRequestRedraw();
 }
 
@@ -481,7 +488,7 @@ static void startAP() {
   WiFi.softAP(AP_SSID, cfg.apPass.c_str());
   dns.start(53, "*", WiFi.softAPIP());
   apMode = true;
-  Serial.printf("[net] setup AP " AP_SSID " up at %s\n", WiFi.softAPIP().toString().c_str());
+  logf("[net] setup AP " AP_SSID " up at %s\n", WiFi.softAPIP().toString().c_str());
   ledSet(0, 0, 1);
   uiRequestRedraw();
 }
@@ -561,14 +568,6 @@ static void handleRoot() {
   h += F("<h2>AGENTE · HERMES GADGET</h2>");
   h += field("hermes", "Endereço do gadget no Hermes (hermes gadget info)", cfg.hermesUrl, "text", "ws://192.168.0.20:8765/gadget");
   h += secretField("htok", "Token de acesso (só se o Hermes usar GADGET_ACCESS_TOKEN)", cfg.hermesToken.length() > 0, "opcional");
-  h += F("<h2>TERMINAL SSH <small>(abre um terminal num servidor seu, pela tela)</small></h2>");
-  h += "<div class=row><div>" + field("sshhost", "Servidor (IP ou nome)", cfg.sshHost, "text", "192.168.0.20") + "</div><div>" +
-       field("sshport", "Porta", String(cfg.sshPort), "number", "22") + "</div></div>";
-  h += field("sshuser", "Usuário", cfg.sshUser, "text", "pi");
-  h += secretField("sshpass", "Senha", cfg.sshPass.length() > 0, "senha");
-  h += F("<p><small>Dica: crie no servidor um usuário só pra isso, com pouco poder. A senha fica só na placa.</small></p>");
-  if (cfg.sshPass.length()) h += F("<label class=chk><input type=checkbox name=sshclr> Apagar a senha salva</label>");
-  if (cfg.sshFp.length()) h += "<p><small>Servidor reconhecido: " + esc(cfg.sshFp) + "</small></p><label class=chk><input type=checkbox name=sshfpclr> Esquecer a chave do servidor (aceita a próxima)</label>";
   h += F("<h2>MESH · MESHTASTIC</h2>");
   h += field("mesh", "IP do nó base", cfg.meshIp, "text", "192.168.0.30");
   h += F("<h2>PAINEL</h2>");
@@ -614,11 +613,6 @@ static void handleSave() {
     take(a, cfg.haName[i]); take(b, cfg.haEnt[i]);
   }
   take("hermes", cfg.hermesUrl); takeSecret("htok", cfg.hermesToken);
-  { String oldHost = cfg.sshHost; take("sshhost", cfg.sshHost); take("sshuser", cfg.sshUser);
-    if (server.hasArg("sshport") && server.arg("sshport").toInt() > 0) cfg.sshPort = server.arg("sshport").toInt();
-    takeSecret("sshpass", cfg.sshPass);
-    if (server.hasArg("sshclr")) cfg.sshPass = "";
-    if (server.hasArg("sshfpclr") || cfg.sshHost != oldHost) cfg.sshFp = ""; }
   take("mesh", cfg.meshIp); take("city", cfg.city);
   if (server.hasArg("btcev")) cfg.btcEvery = constrain(server.arg("btcev").toInt(), 30, 600);
   if (server.hasArg("theme")) cfg.theme = constrain(server.arg("theme").toInt(), 0, 2);
@@ -635,7 +629,10 @@ static void handleSave() {
 static void handleStatus() {
   JsonDocument d;
   d["fw"] = FW_VERSION; d["ip"] = ipStr; d["wifi"] = (bool)wifiUp; d["ap"] = (bool)apMode;
-  d["heap"] = ESP.getFreeHeap(); d["btc"] = live.btc; d["hermes"] = hermes.status;
+  d["heap"] = ESP.getFreeHeap(); d["maxblk"] = ESP.getMaxAllocHeap(); d["uptime_s"] = millis() / 1000;
+  d["net_beat_s"] = (millis() - netHeartbeat) / 1000; d["online"] = (bool)netOnline; d["ssh"] = sshState;
+  d["btc"] = live.btc; d["wx"] = live.wxOk; d["feed"] = live.plOk; d["agenda"] = live.agN; d["hermes"] = hermes.status;
+  d["erro_feed"] = live.plErr; d["erro_agenda"] = live.icErr;
   String s; serializeJson(d, s);
   server.send(200, "application/json", s);
 }
@@ -690,6 +687,7 @@ static void portalBegin() {
   server.on("/", HTTP_GET, handleRoot);
   server.on("/save", HTTP_POST, handleSave);
   server.on("/status", HTTP_GET, handleStatus);
+  server.on("/log", HTTP_GET, []() { server.send(200, "text/plain; charset=utf-8", logDump()); });
   server.onNotFound([]() {
     if (apMode) { server.sendHeader("Location", "http://192.168.4.1/"); server.send(302, "text/plain", ""); }
     else server.send(404, "text/plain", "not found");
@@ -717,11 +715,11 @@ static void setOnline(bool on) {
   if (on) {
     uint32_t mins = offlineSince ? (millis() - offlineSince) / 60000 : 0;
     netOnline = true; offlineSince = 0;
-    Serial.printf("[net] internet back after %u min\n", mins);
+    logf("[net] internet back after %u min\n", mins);
     notifyAdd(N_REDE, "Internet voltou", mins ? "ficou fora " + String(mins) + " min" : String("conexão restabelecida"));
   } else {
     netOnline = false; offlineSince = millis();
-    Serial.println("[net] internet down");
+    logf("[net] internet down");
     notifyAdd(N_REDE, "Internet caiu", wifiUp ? "Wi-Fi conectado, sem saída para a internet" : "sem Wi-Fi");
   }
   uiRequestRedraw();
@@ -760,7 +758,7 @@ static void fetchPropagation() {
   memcpy(live.rdBand, cond, sizeof(cond));
   time_t now; time(&now); live.rdAt = now; live.rdOk = true; live.rdErr = "";
   unlock();
-  Serial.printf("[net] radio sfi %d k %d a %d\n", live.rdSfi, live.rdK, live.rdA);
+  logf("[net] radio sfi %d k %d a %d\n", live.rdSfi, live.rdK, live.rdA);
 }
 
 static char tle1[80], tle2[80];
@@ -799,7 +797,7 @@ static void fetchIssPass() {
     live.issMaxEl = (int)lround(p.maxelevation); live.issAzAos = (int)lround(p.azstart); live.issAzLos = (int)lround(p.azstop);
   }
   unlock();
-  Serial.printf("[net] iss next pass %s el %d\n", found ? "ok" : "none", live.issMaxEl);
+  logf("[net] iss next pass %s el %d\n", found ? "ok" : "none", live.issMaxEl);
 }
 
 static void netHeartbeatTouch();
@@ -825,13 +823,14 @@ class IcsSink : public Stream {   // HTTPClient::writeToStream wants a Stream; o
 static void fetchIcal() {
   time_t now; time(&now);
   if (now < 1700000000) return;                 // needs the right time to know what is "next"
-  static IcsAgenda ag;                          // ~4 KB of state: not on the task stack
+  IcsAgenda* agp = new IcsAgenda;               // ~4 KB of state, only while reading
+  IcsAgenda& ag = *agp;
   ag.begin(now, now + 14L * 86400, -3 * 3600);
   HTTPClient http;
   WiFiClientSecure sec;
   WiFiClient plain;
   bool ok = cfg.icalUrl.startsWith("https") ? (sec.setCACert(ROOT_CAS), http.begin(sec, cfg.icalUrl)) : http.begin(plain, cfg.icalUrl);
-  if (!ok) { lock(); live.icErr = "link da agenda inválido"; unlock(); return; }
+  if (!ok) { delete agp; lock(); live.icErr = "link da agenda inválido"; unlock(); return; }
   http.setTimeout(10000);
   http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
   int code = http.GET();
@@ -839,8 +838,9 @@ static void fetchIcal() {
   int got = code == 200 ? http.writeToStream(&sink) : -1;
   http.end();
   if (code != 200 || (got < 0 && !sink.tooBig)) {
-    Serial.printf("[net] ical -> %d (%d)\n", code, got);
+    logf("[net] ical -> %d (%d)\n", code, got);
     lock(); live.icErr = code == 404 || code == 401 || code == 403 ? "link da agenda recusado (troque o link)" : "agenda sem resposta"; unlock();
+    delete agp;
     return;
   }
   IcsEvent ev[3];
@@ -850,7 +850,9 @@ static void fetchIcal() {
   for (int i = 0; i < n; i++) { live.agT[i] = ev[i].title; live.agQ[i] = (uint32_t)ev[i].start; live.agDia[i] = ev[i].allDay; }
   live.icOk = true; live.icAt = now; live.icErr = sink.tooBig ? "agenda muito grande: só parte foi lida" : "";
   unlock();
-  Serial.printf("[net] ical %u KB, %ld eventos, %d próximos\n", (unsigned)(sink.total / 1024), ag.events, n);
+  long evs = ag.events;
+  delete agp;
+  logf("[net] ical %u KB, %ld eventos, %d próximos\n", (unsigned)(sink.total / 1024), evs, n);
 }
 
 // ---------- network task ----------
@@ -864,7 +866,7 @@ static void netTask(void*) {
     if (scanReq) { scanReq = false; doScan(); }
     if (joinReq) {
       joinReq = false;
-      Serial.printf("[net] connecting to %s (asked on screen)\n", wifiJoinSsid.c_str());
+      logf("[net] connecting to %s (asked on screen)\n", wifiJoinSsid.c_str());
       WiFi.disconnect();
       vTaskDelay(pdMS_TO_TICKS(150));
       WiFi.begin(wifiJoinSsid.c_str(), joinPass.c_str());
@@ -876,7 +878,7 @@ static void netTask(void*) {
         wl_status_t st = WiFi.status();
         lock(); wifiJoinErr = st == WL_NO_SSID_AVAIL ? "rede não encontrada" : "não conectou: senha errada ou sinal fraco"; unlock();
         wifiJoin = 3;
-        Serial.printf("[net] join failed, status %d\n", (int)st);
+        logf("[net] join failed, status %d\n", (int)st);
         uiRequestRedraw();
       }
     }
@@ -884,7 +886,7 @@ static void netTask(void*) {
     if (up && !wifiUp) {
       wifiUp = true; everUp = true;
       ipStr = WiFi.localIP().toString();
-      Serial.printf("[net] wifi up %s rssi %d\n", ipStr.c_str(), WiFi.RSSI());
+      logf("[net] wifi up %s rssi %d\n", ipStr.c_str(), WiFi.RSSI());
       configTzTime("<-03>3", "pool.ntp.org", "time.google.com");
       lastBtc = lastWx = lastSoc = lastHa = lastPh = lastPl = 0;
       if (apMode) { dns.stop(); WiFi.softAPdisconnect(true); WiFi.mode(WIFI_STA); apMode = false; }
@@ -892,7 +894,7 @@ static void netTask(void*) {
       uiRequestRedraw();
     } else if (!up && wifiUp) {
       wifiUp = false;
-      Serial.println("[net] wifi down");
+      logf("[net] wifi down");
       uiRequestRedraw();
     }
     if (!up && !apMode && !everUp && (!anySsid() || millis() - wifiStart > 25000)) startAP();

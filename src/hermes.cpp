@@ -164,11 +164,11 @@ static void onMessage(const char* txt, size_t len) {
     bool paired = m["paired"] | false;
     hermes.status = paired ? 3 : 2;
     hermes.err = "";
-    Serial.printf("[hermes] welcome paired=%d\n", paired);
+    logf("[hermes] welcome paired=%d\n", paired);
   } else if (type == "pairing") {
     hermes.status = 2;
     hermes.pairCode = String((const char*)(m["code"] | ""));
-    Serial.printf("[hermes] pairing code %s\n", hermes.pairCode.c_str());
+    logf("[hermes] pairing code %s\n", hermes.pairCode.c_str());
   } else if (type == "paired") {
     hermes.status = 3; hermes.pairCode = "";
     beep(2600, 80);
@@ -215,7 +215,7 @@ static void onMessage(const char* txt, size_t len) {
   } else if (type == "error") {
     hermes.err = String((const char*)(m["message"] | m["code"] | "erro"));
     hermes.status = 4;
-    Serial.printf("[hermes] error %s\n", hermes.err.c_str());
+    logf("[hermes] error %s\n", hermes.err.c_str());
   }
   uiRequestRedraw();
 }
@@ -223,7 +223,7 @@ static void onMessage(const char* txt, size_t len) {
 static void onEvent(WStype_t t, uint8_t* payload, size_t len) {
   switch (t) {
     case WStype_CONNECTED:
-      Serial.println("[hermes] connected");
+      logf("[hermes] connected");
       hermes.status = 1;
       sendHello();
       break;
@@ -249,7 +249,7 @@ void hermesBegin() {
   int colon = hostport.indexOf(':');
   String host = colon >= 0 ? hostport.substring(0, colon) : hostport;
   int port = colon >= 0 ? hostport.substring(colon + 1).toInt() : (ssl ? 443 : 8765);
-  Serial.printf("[hermes] %s host=%s port=%d path=%s id=%s\n", ssl ? "wss" : "ws", host.c_str(), port, path.c_str(), hermes.deviceId.c_str());
+  logf("[hermes] %s host=%s port=%d path=%s id=%s\n", ssl ? "wss" : "ws", host.c_str(), port, path.c_str(), hermes.deviceId.c_str());
   if (ssl) ws.beginSSL(host.c_str(), port, path.c_str(), "", "hermes-gadget.v1");
   else ws.begin(host.c_str(), port, path.c_str(), "hermes-gadget.v1");
   ws.onEvent(onEvent);

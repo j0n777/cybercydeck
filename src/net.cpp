@@ -53,6 +53,8 @@ static String esc(const String& s) {
 }
 
 extern volatile uint32_t netHeartbeat;
+static uint32_t demoSince = 0;
+static void demoFill();
 static int lastHttp = 0;
 static bool httpGet(const String& url, String& body, const String& bearer = "", const char* hName = nullptr, const String& hVal = "", const char* accept = "application/json") {
   HTTPClient http;
@@ -688,6 +690,21 @@ static void portalBegin() {
   server.on("/save", HTTP_POST, handleSave);
   server.on("/status", HTTP_GET, handleStatus);
   server.on("/log", HTTP_GET, []() { server.send(200, "text/plain; charset=utf-8", logDump()); });
+  server.on("/demo", HTTP_GET, []() {
+    if (server.arg("on") == "0") { server.send(200, "text/plain", "saindo do modo demonstração (reinicia)"); delay(300); ESP.restart(); }
+    demoMode = true; demoSince = millis(); demoFill(); uiRequestRedraw();
+    server.send(200, "text/plain; charset=utf-8", "modo demonstração ligado por 15 min: dados de exemplo na tela, /shot.bmp?tela=home liberado");
+  });
+  server.on("/shot.bmp", HTTP_GET, []() {
+    // only with sample data on the screen: a real screen can show agenda, machines, followers
+    if (!demoMode) { server.send(403, "text/plain; charset=utf-8", "ligue antes o modo demonstração: /demo?on=1"); return; }
+    if (server.hasArg("tela")) { int sc = screenFromName(server.arg("tela")); if (sc >= 0) uiGoto(sc); }
+    delay(400);
+    server.setContentLength(UI_BMP_SIZE);
+    server.send(200, "image/bmp", "");
+    WiFiClient c = server.client();
+    uiScreenshotBmp(c);
+  });
   server.onNotFound([]() {
     if (apMode) { server.sendHeader("Location", "http://192.168.4.1/"); server.send(302, "text/plain", ""); }
     else server.send(404, "text/plain", "not found");
@@ -855,6 +872,40 @@ static void fetchIcal() {
   logf("[net] ical %u KB, %ld eventos, %d próximos\n", (unsigned)(sink.total / 1024), evs, n);
 }
 
+
+// ---------- demo mode: sample data for screenshots (README, docs), nothing personal ----------
+// Turned on over the LAN at /demo?on=1; the fetches stop, and /shot.bmp?tela=<screen> works.
+// It turns itself off (restart) after 15 minutes, or at /demo?on=0.
+volatile bool demoMode = false;
+static void demoFill() {
+  time_t now; time(&now);
+  lock();
+  live.btcOk = true; live.btc = 97450; live.btcChg = 2.31f; live.eth = 3612; live.ethChg = -0.84f; live.sol = 238; live.solChg = 4.12f;
+  live.feeSlow = 3; live.feeStd = 5; live.feeFast = 8; live.fng = 64; live.fngLabel = "Greed"; live.btcAt = now;
+  live.wxOk = true; live.wxTemp = 24; live.wxHum = 61; live.wxWind = 9; live.wxCode = 2; live.wxPlace = "São Paulo"; live.wxByIp = false; live.wxAt = now;
+  const float mx[4] = {27, 29, 25, 23}, mn[4] = {18, 19, 17, 16}; const int cd[4] = {2, 1, 61, 3};
+  for (int i = 0; i < 4; i++) { live.dMax[i] = mx[i]; live.dMin[i] = mn[i]; live.dCode[i] = cd[i]; struct tm t; time_t d = now + 86400L * (i + 1); localtime_r(&d, &t); const char* W[7] = {"dom.", "seg.", "ter.", "qua.", "qui.", "sex.", "sáb."}; live.dDay[i] = W[t.tm_wday]; }
+  live.socOk = true; live.socYt = 48200; live.socIg = 312500; live.socTt = 157800; live.socX = 22400; live.socTg = 9100; live.socTh = 41000; live.socFb = 18600;
+  live.socTotal = 48200 + 312500 + 157800 + 22400 + 9100 + 41000 + 18600; live.socAt = now;
+  live.phOk = true; live.phTotal = 48213; live.phBlocked = 9870; live.phDomains = 312450; live.phPct = 20.5f; live.phClients = 14; live.phAt = now; live.phErr = "";
+  live.plOk = true; live.plAt = now; live.plErr = ""; live.saude = "ok";
+  live.mqN = 3;
+  const char* nm[3] = {"Servidor", "Raspberry Pi", "NAS"}; const int cpu[3] = {23, 8, 4}, ram[3] = {61, 37, 52}, tp[3] = {54, 47, 41}, dk[3] = {68, 41, 77};
+  for (int i = 0; i < 3; i++) { live.mqNome[i] = nm[i]; live.mqCpu[i] = cpu[i]; live.mqRam[i] = ram[i]; live.mqTemp[i] = tp[i]; live.mqDisk[i] = dk[i]; live.mqAge[i] = 40; live.mqOn[i] = true; }
+  live.iaCusto = 37.80f; live.iaTokens = 41.2e6; live.iaN = 2; live.iaNome[0] = "Servidor"; live.iaC[0] = 29.10f; live.iaNome[1] = "Raspberry Pi"; live.iaC[1] = 8.70f;
+  live.agN = 3; live.icOk = true; live.icAt = now; live.icErr = "";
+  live.agT[0] = "Reunião de equipe"; live.agQ[0] = now + 50 * 60; live.agDia[0] = false;
+  live.agT[1] = "Dentista"; live.agQ[1] = now + 26 * 3600; live.agDia[1] = false;
+  live.agT[2] = "Aniversário da Ana"; live.agQ[2] = now + 3 * 86400; live.agDia[2] = true;
+  live.nwN = 3; live.nwT[0] = "Nova versão do firmware disponível"; live.nwF[0] = "GitHub"; live.nwT[1] = "Rede mesh cobre o bairro todo"; live.nwF[1] = "Blog";
+  live.nwT[2] = "Como montar seu próprio cyberdeck"; live.nwF[2] = "Fórum";
+  live.rdOk = true; live.rdAt = now; live.rdSfi = 162; live.rdK = 2; live.rdA = 8; live.rdSpots = 118;
+  const uint8_t bd[2][4] = {{2, 3, 3, 2}, {3, 2, 1, 1}}; memcpy(live.rdBand, bd, sizeof(bd));
+  live.issOk = true; live.issAos = now + 47 * 60; live.issLos = now + 53 * 60; live.issMaxEl = 58; live.issAzAos = 225; live.issAzLos = 45; live.rdErr = "";
+  unlock();
+  cfg.nome = "Ana";   // only in RAM: the restart at the end brings the real one back
+}
+
 // ---------- network task ----------
 volatile uint32_t netHeartbeat = 0;   // read by the UI task: software watchdog for this task
 static void netHeartbeatTouch() { netHeartbeat = millis(); }
@@ -906,7 +957,8 @@ static void netTask(void*) {
       lastNetCheck = millis();
       setOnline(wifiUp && reachInternet());
     }
-    if (wifiUp && (sshState == 1 || sshState == 2)) { if (hermesStarted) hermesLoop(); }   // terminal open: no HTTPS fetches
+    if (demoMode && millis() - demoSince > 15UL * 60 * 1000) ESP.restart();
+    if (wifiUp && (demoMode || sshState == 1 || sshState == 2)) { if (hermesStarted) hermesLoop(); }   // demo or terminal: no HTTPS fetches
     else if (wifiUp) {
       uint32_t now = millis();
       if (refreshReq) { refreshReq = false; lastBtc = lastWx = lastSoc = lastHa = lastPh = lastPl = lastIc = 0; }

@@ -16,7 +16,7 @@ enum { VT_BOLD = 1, VT_INVERSE = 2 };
 
 class Vt {
  public:
-  VtCell cell[VT_ROWS][VT_COLS];
+  VtCell (*cell)[VT_COLS] = nullptr;   // VT_ROWS rows, allocated by the first reset() (6 KB only when used)
   int cx = 0, cy = 0;
   bool cursorOn = true, appCursor = false;   // appCursor: arrows go as ESC O A instead of ESC [ A
   uint32_t version = 0;                      // goes up on every change (redraw when it moves)

@@ -20,8 +20,6 @@ struct Config {
   String phUrl, phPass;       // Pi-hole v6 (local network)
   uint16_t mods = 0xF3F;      // enabled modules, see M_* below (IR and Mesh off by default)
   String feedToken;           // sent as "Authorization: Bearer <token>" to the feed
-  String sshHost, sshUser, sshPass, sshFp;   // SSH terminal (the password never leaves the board)
-  int sshPort = 22;
   String icalUrl;             // calendar .ics link (Google: "secret address in iCal format"); replaces the feed agenda
   bool alertBeep = false;     // beep on alerts (never at night)
   bool nightDim = true;       // dim the backlight from 23h to 7h
@@ -128,14 +126,17 @@ extern Notif notifs[NOTIF_MAX];       // newest first
 extern volatile int notifN, notifUnread;
 void notifyAdd(uint8_t kind, const String& title, const String& text);   // never call while holding dataLock
 
+// ---------- log readable at /log ----------
+void logf(const char* fmt, ...);
+String logDump();
+
 // ---------- SSH terminal ----------
 extern Vt vt;                          // the terminal screen (guarded by dataLock)
 extern volatile int sshState;          // 0 off, 1 connecting, 2 open, 3 closed/failed
-extern String sshMsg;
-void sshStart();
+extern String sshMsg;                  // "user@host" while a session is open
+void termOpen();                       // the terminal screen opened: local prompt ("cyd$"), type ssh user@host
+void termInput(const char* s, int n);  // keys from the touch keyboard
 void sshStop();
-void sshSend(const char* s, int n);
-bool sshConfigured();
 
 // ---------- internet check (blackout mode) ----------
 extern volatile bool netOnline;        // a public address answered in the last check

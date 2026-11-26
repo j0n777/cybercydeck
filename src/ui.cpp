@@ -50,7 +50,7 @@ void notifyAdd(uint8_t kind, const String& title, const String& text) {
   if (notifN < NOTIF_MAX) notifN++;
   if (notifUnread < NOTIF_MAX) notifUnread++;
   xSemaphoreGive(dataLock);
-  Serial.printf("[ui] aviso: %s · %s\n", title.c_str(), text.c_str());
+  logf("[ui] aviso: %s · %s\n", title.c_str(), text.c_str());
   redraw = true;
 }
 
@@ -963,18 +963,13 @@ static void drawSsh() {
   // top bar: leave, who, keyboard toggle
   rect(0, 0, 320, TM_Y, C_CARD);
   text(4, 1, "‹ sair", F_BM11, C_BLUE, C_CARD);
-  String who = sshState == 2 ? sshMsg : sshState == 1 ? String("conectando…") : String("terminal SSH");
+  String who = sshState == 2 ? sshMsg : sshState == 1 ? String("conectando…") : String("terminal");
   text(160, 1, who, F_BM11, sshState == 2 ? C_GREEN : C_MUTED, C_CARD, 1);
   text(316, 1, tmKb ? "esconder teclado" : "teclado", F_BM11, C_BLUE, C_CARD, 2);
   int rows = tmKb ? (TKB_Y - TM_Y) / TM_LH : VT_ROWS;
   int first = tmKb ? constrain(vt.cy - rows + 2, 0, VT_ROWS - rows) : 0;
   rect(0, TM_Y, 320, rows * TM_LH + 2, C_BG);
-  if (sshState != 2 && sshState != 0 && !vt.version) {
-    wrap(8, TM_Y + 8, 304, sshMsg, F_BM13, C_MUTED, C_BG, 17, 4);
-  } else if (sshState == 0 || (sshState == 3 && !vt.version)) {
-    wrap(8, TM_Y + 8, 304, sshConfigured() ? "Toque em conectar para abrir o terminal em " + cfg.sshUser + "@" + cfg.sshHost + "."
-                                           : String("Configure o servidor em Config › Pelo celular (Terminal SSH)."), F_BM13, C_MUTED, C_BG, 17, 4);
-  } else {
+  {
     font(T_BM11);
     for (int r = 0; r < rows; r++) {
       int vr = first + r, y = TM_Y + 1 + r * TM_LH;
@@ -1002,14 +997,8 @@ static void drawSsh() {
         }
         c = c2;
       }
-      if (vt.cursorOn && vr == vt.cy && sshState == 2) rect(vt.cx * TM_CW, y + TM_LH - 3, TM_CW, 2, C_GREEN);
+      if (vt.cursorOn && vr == vt.cy) rect(vt.cx * TM_CW, y + TM_LH - 3, TM_CW, 2, C_GREEN);
     }
-  }
-  if (sshState != 2) {   // connect button
-    int y = tmKb ? TKB_Y - 40 : 196;
-    bool can = sshConfigured() && sshState != 1;
-    rrect(90, y, 140, 34, 6, can ? C_INK : C_LINE, can ? C_INK : C_LINE);
-    text(160, y + 9, sshState == 1 ? "conectando…" : "conectar", F_BS13, C_WHITE, can ? C_INK : C_LINE, 1);
   }
   if (!tmKb) return;
   // keyboard: special row, 3 letter rows, bottom row
@@ -1028,20 +1017,14 @@ static void drawSsh() {
   tmKey(98, yb, 150, "espaço", false);
   tmKey(250, yb, 68, "enter", true);
 }
-static void tmSendKey(const char* s) { sshSend(s, strlen(s)); }
+static void tmSendKey(const char* s) { termInput(s, strlen(s)); }
 static void sshTap(int x, int y) {
   if (y < TM_Y + 4) {
     if (x < 60) { sshStop(); uiGoto(S_APPS); return; }
     if (x > 250) { tmKb = !tmKb; redraw = true; return; }
     return;
   }
-  if (sshState != 2) {
-    int by = tmKb ? TKB_Y - 40 : 196;
-    if (in(x, y, 90, by, 140, 34)) { sshStart(); redraw = true; return; }
-    if (!tmKb) return;
-  }
   if (!tmKb || y < TKB_Y) return;
-  if (sshState != 2) { toast("Conecte primeiro"); return; }
   int row = (y - TKB_Y) / (TKB_H + TKB_G);
   if (row == 0) {
     int i = constrain(x / 40, 0, 7);
@@ -1057,7 +1040,7 @@ static void sshTap(int x, int y) {
     if (x < x0 - TKB_G || i < 0 || i >= n) return;
     char c = r[i];
     if (tmCtrl && isalpha((unsigned char)c)) { c = toupper(c) & 0x1F; tmCtrl = false; redraw = true; }   // ctrl+c, ctrl+d...
-    sshSend(&c, 1);
+    termInput(&c, 1);
     if (tmMode == 1) { tmMode = 0; redraw = true; }
     return;
   }
@@ -1660,7 +1643,7 @@ static void calTapRaw(int rx, int ry) {
   cfg.calAy = (216 - 24) / (b1 - b0); cfg.calBy = 24 - cfg.calAy * b0;
   cfg.calOk = true;
   configSave();
-  Serial.printf("[ui] calibrated swap=%d ax=%.4f bx=%.1f ay=%.4f by=%.1f\n", swap, cfg.calAx, cfg.calBx, cfg.calAy, cfg.calBy);
+  logf("[ui] calibrated swap=%d ax=%.4f bx=%.1f ay=%.4f by=%.1f\n", swap, cfg.calAx, cfg.calBx, cfg.calAy, cfg.calBy);
   calStep = 0;
   uiGoto(savedCount() ? S_HOME : S_WIFI);
   toast("Toque calibrado");
@@ -1951,6 +1934,7 @@ void uiGoto(int s) {
   if (s == S_CASA || s == S_PIHOLE) netRequestRefresh();
   if (s == S_AGENDA || s == S_NEWS || s == S_MAQ) netRequestPlaca();
   if (s == S_RADIO) netRequestRadio();
+  if (s == S_SSH) termOpen();
   if (s == S_TANKS && prev != S_TANKS && (tkPhase == TK_OVER || !tkX[1])) tanksNew();
   if (s == S_AVISOS) notifUnread = 0;
   if (s == S_WIFI) { wfForgetArm = -1; if (wifiJoin >= 2) wifiJoin = wifiJoin == 3 ? 3 : 0; }
@@ -1962,7 +1946,7 @@ void uiRequestRedraw() { redraw = true; }
 static bool in(int x, int y, int rx, int ry, int rw, int rh) { return x >= rx && x < rx + rw && y >= ry && y < ry + rh; }
 
 void uiTap(int x, int y) {
-  Serial.printf("[ui] tap %d,%d on %s\n", x, y, screenName(curScreen));
+  logf("[ui] tap %d,%d on %s\n", x, y, screenName(curScreen));
   switch (curScreen) {
     case S_HOME:
       if (y < 26 && x > 230) { uiGoto(S_CONFIG); return; }
@@ -2008,7 +1992,7 @@ void uiTap(int x, int y) {
       for (int k = 0; k < 3; k++) {
         if (!SSIDS[k]->length() || !in(x, y, 216, 98 + k * 32, 96, 32)) continue;
         if (wfForgetArm != k) { wfForgetArm = k; redraw = true; return; }
-        Serial.printf("[ui] forget wifi %s\n", SSIDS[k]->c_str());
+        logf("[ui] forget wifi %s\n", SSIDS[k]->c_str());
         *SSIDS[k] = ""; *PASSES[k] = ""; configSave(); wfForgetArm = -1; toast("Rede esquecida"); redraw = true; return;
       }
       if (wfForgetArm >= 0) { wfForgetArm = -1; redraw = true; }
@@ -2068,7 +2052,7 @@ void uiTap(int x, int y) {
           configSave();
           netRequestRefresh();
           redraw = true;
-          Serial.printf("[ui] module %s %s\n", MOD_NAMES[i], (cfg.mods >> i) & 1 ? "on" : "off");
+          logf("[ui] module %s %s\n", MOD_NAMES[i], (cfg.mods >> i) & 1 ? "on" : "off");
         }
       }
       return;
@@ -2126,7 +2110,7 @@ void uiInit() {
   spr.setColorDepth(16);
   const int tries[5] = {120, 80, 60, 48, 40};
   for (int h : tries) { if (spr.createSprite(320, h)) { stripH = h; break; } }
-  Serial.printf("[ui] strip %dpx, free heap %u, largest %u\n", stripH, ESP.getFreeHeap(), ESP.getMaxAllocHeap());
+  logf("[ui] strip %dpx, free heap %u, largest %u\n", stripH, ESP.getFreeHeap(), ESP.getMaxAllocHeap());
   themePalette();
   if (!cfg.calOk) curScreen = S_CAL;
   bootLog();

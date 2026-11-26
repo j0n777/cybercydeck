@@ -640,6 +640,8 @@ static void handleStatus() {
   d["net_beat_s"] = (millis() - netHeartbeat) / 1000; d["online"] = (bool)netOnline; d["ssh"] = sshState;
   d["btc"] = live.btc; d["wx"] = live.wxOk; d["feed"] = live.plOk; d["agenda"] = live.agN; d["hermes"] = hermes.status;
   d["erro_feed"] = live.plErr; d["erro_agenda"] = live.icErr;
+  { time_t t; time(&t); d["relogio_ok"] = t > 1700000000; d["epoch"] = (long)t; }
+  d["versao_github"] = live.fwLatest;
   String s; serializeJson(d, s);
   server.send(200, "application/json", s);
 }
@@ -999,6 +1001,36 @@ static void demoFill() {
   cfg.nome = "Ana";   // only in RAM: the restart at the end brings the real one back
 }
 
+
+// ---------- clock fallback ----------
+// HTTPS needs the right date to check certificates. If NTP does not answer (some networks block
+// it), take the date from the "Date" header of a plain HTTP page. Only used while the clock is unset.
+static uint32_t wifiUpAt = 0, lastDateTry = 0;
+static bool clockSet() { time_t t; time(&t); return t > 1700000000; }
+static void clockFromHttp() {
+  HTTPClient http; WiFiClient c;
+  const char* keys[] = {"Date"};
+  if (!http.begin(c, "http://detectportal.firefox.com/success.txt")) return;
+  http.collectHeaders(keys, 1);
+  http.setTimeout(6000);
+  int code = http.GET();
+  String d = http.header("Date");
+  http.end();
+  // "Thu, 26 Nov 2026 07:10:00 GMT"
+  static const char* M = "JanFebMarAprMayJunJulAugSepOctNovDec";
+  int day, year, hh, mm, ss; char mon[4];
+  if (code <= 0 || sscanf(d.c_str(), "%*3s, %d %3s %d %d:%d:%d", &day, mon, &year, &hh, &mm, &ss) != 6) {
+    logf("[net] relógio: sem NTP e sem data por HTTP (%d)", code); return;
+  }
+  const char* f = strstr(M, mon); if (!f) return;
+  struct tm t = {}; t.tm_year = year - 1900; t.tm_mon = (f - M) / 3; t.tm_mday = day; t.tm_hour = hh; t.tm_min = mm; t.tm_sec = ss;
+  setenv("TZ", "UTC0", 1); tzset();
+  time_t epoch = mktime(&t);
+  setenv("TZ", "<-03>3", 1); tzset();
+  struct timeval tv = {epoch, 0};
+  settimeofday(&tv, nullptr);
+  logf("[net] relógio acertado pela data HTTP (NTP não respondeu)");
+}
 // ---------- network task ----------
 volatile uint32_t netHeartbeat = 0;   // read by the UI task: software watchdog for this task
 static void netHeartbeatTouch() { netHeartbeat = millis(); }
@@ -1031,7 +1063,10 @@ static void netTask(void*) {
       wifiUp = true; everUp = true;
       ipStr = WiFi.localIP().toString();
       logf("[net] wifi up %s rssi %d\n", ipStr.c_str(), WiFi.RSSI());
-      configTzTime("<-03>3", "pool.ntp.org", "time.google.com");
+      // the router first (many answer NTP and some networks block outside NTP), then public servers
+      static String gw; gw = WiFi.gatewayIP().toString();
+      configTzTime("<-03>3", gw.c_str(), "pool.ntp.org", "time.cloudflare.com");
+      wifiUpAt = millis();
       lastBtc = lastWx = lastSoc = lastHa = lastPh = lastPl = 0;
       if (apMode) { dns.stop(); WiFi.softAPdisconnect(true); WiFi.mode(WIFI_STA); apMode = false; }
       ledSet(0, 0, 0);
@@ -1051,8 +1086,9 @@ static void netTask(void*) {
       setOnline(wifiUp && reachInternet());
     }
     if (demoMode && millis() - demoSince > 15UL * 60 * 1000) ESP.restart();
+    if (wifiUp && !clockSet() && millis() - wifiUpAt > 12000 && millis() - lastDateTry > 30000) { lastDateTry = millis(); clockFromHttp(); }
     if (wifiUp && (demoMode || sshState == 1 || sshState == 2)) { if (hermesStarted) hermesLoop(); }   // demo or terminal: no HTTPS fetches
-    else if (wifiUp) {
+    else if (wifiUp && clockSet()) {
       uint32_t now = millis();
       if (refreshReq) { refreshReq = false; lastBtc = lastWx = lastSoc = lastHa = lastPh = lastPl = lastIc = 0; }
       if (placaReq) { placaReq = false; if (now - lastPl > 60000UL) lastPl = 0; }

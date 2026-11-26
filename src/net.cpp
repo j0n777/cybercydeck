@@ -561,6 +561,14 @@ static void handleRoot() {
   h += F("<h2>AGENTE · HERMES GADGET</h2>");
   h += field("hermes", "Endereço do gadget no Hermes (hermes gadget info)", cfg.hermesUrl, "text", "ws://192.168.0.20:8765/gadget");
   h += secretField("htok", "Token de acesso (só se o Hermes usar GADGET_ACCESS_TOKEN)", cfg.hermesToken.length() > 0, "opcional");
+  h += F("<h2>TERMINAL SSH <small>(abre um terminal num servidor seu, pela tela)</small></h2>");
+  h += "<div class=row><div>" + field("sshhost", "Servidor (IP ou nome)", cfg.sshHost, "text", "192.168.0.20") + "</div><div>" +
+       field("sshport", "Porta", String(cfg.sshPort), "number", "22") + "</div></div>";
+  h += field("sshuser", "Usuário", cfg.sshUser, "text", "pi");
+  h += secretField("sshpass", "Senha", cfg.sshPass.length() > 0, "senha");
+  h += F("<p><small>Dica: crie no servidor um usuário só pra isso, com pouco poder. A senha fica só na placa.</small></p>");
+  if (cfg.sshPass.length()) h += F("<label class=chk><input type=checkbox name=sshclr> Apagar a senha salva</label>");
+  if (cfg.sshFp.length()) h += "<p><small>Servidor reconhecido: " + esc(cfg.sshFp) + "</small></p><label class=chk><input type=checkbox name=sshfpclr> Esquecer a chave do servidor (aceita a próxima)</label>";
   h += F("<h2>MESH · MESHTASTIC</h2>");
   h += field("mesh", "IP do nó base", cfg.meshIp, "text", "192.168.0.30");
   h += F("<h2>PAINEL</h2>");
@@ -606,6 +614,11 @@ static void handleSave() {
     take(a, cfg.haName[i]); take(b, cfg.haEnt[i]);
   }
   take("hermes", cfg.hermesUrl); takeSecret("htok", cfg.hermesToken);
+  { String oldHost = cfg.sshHost; take("sshhost", cfg.sshHost); take("sshuser", cfg.sshUser);
+    if (server.hasArg("sshport") && server.arg("sshport").toInt() > 0) cfg.sshPort = server.arg("sshport").toInt();
+    takeSecret("sshpass", cfg.sshPass);
+    if (server.hasArg("sshclr")) cfg.sshPass = "";
+    if (server.hasArg("sshfpclr") || cfg.sshHost != oldHost) cfg.sshFp = ""; }
   take("mesh", cfg.meshIp); take("city", cfg.city);
   if (server.hasArg("btcev")) cfg.btcEvery = constrain(server.arg("btcev").toInt(), 30, 600);
   if (server.hasArg("theme")) cfg.theme = constrain(server.arg("theme").toInt(), 0, 2);
@@ -891,7 +904,8 @@ static void netTask(void*) {
       lastNetCheck = millis();
       setOnline(wifiUp && reachInternet());
     }
-    if (wifiUp) {
+    if (wifiUp && (sshState == 1 || sshState == 2)) { if (hermesStarted) hermesLoop(); }   // terminal open: no HTTPS fetches
+    else if (wifiUp) {
       uint32_t now = millis();
       if (refreshReq) { refreshReq = false; lastBtc = lastWx = lastSoc = lastHa = lastPh = lastPl = lastIc = 0; }
       if (placaReq) { placaReq = false; if (now - lastPl > 60000UL) lastPl = 0; }

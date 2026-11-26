@@ -29,7 +29,7 @@ Firmware para a **ESP32-2432S028 ("Cheap Yellow Display", CYD)** que funciona de
 | `docs/hardware.md` | lista de peças do cyberdeck e observações |
 | `n8n/` | workflow do feed (máquinas, uso de IA) para importar no n8n |
 | `site/` | página de gravação pelo navegador (publicada no GitHub Pages) |
-| `tests/` | teste do leitor de iCal, roda no computador e no GitHub Actions |
+| `tests/` | testes do leitor de iCal e do terminal; rodam no computador e no GitHub Actions |
 
 ## Gravar a CYD
 **Pelo navegador (mais fácil):** abra **https://j0n777.github.io/cybercydeck/** no Chrome ou no Edge de um computador,
@@ -62,6 +62,19 @@ use **Redefinir** no Google. Sem link, a agenda vem do feed.
 
 ## Máquinas e uso de IA (n8n)
 Veja [`n8n/README.md`](n8n/README.md): um workflow pronto para importar, mais o `host/sinal.py` que cada máquina roda.
+
+## Terminal SSH
+Em **Mais › Terminal**: um terminal de verdade (53×18, cores, nano, top, less, vim) num servidor seu, com teclado na tela
+(esc, tab, ctrl, setas). Configure servidor, porta, usuário e senha no portal, em **Terminal SSH**.
+- Login só por senha: o login por chave precisaria de ~125 KB a mais e não cabe junto com as duas cópias do firmware
+  que mantêm a atualização pelo Wi-Fi. Use no servidor um usuário criado só pra isso, com pouco poder.
+- A chave do servidor fica guardada na primeira conexão; se ela mudar, a placa recusa (pode ser um ataque) até você
+  mandar esquecer no portal.
+- Enquanto o terminal está aberto, a placa pausa as buscas de dados pela internet para sobrar memória.
+
+## Jogos
+Snake e **Tanques**: artilharia por turno contra a placa. Toque no céu para mirar (direção e força) ou ajuste
+ângulo e força nos botões; o vento muda a cada rodada e a mira da placa melhora com o tempo.
 
 ## Aprovações do agente e avisos
 Com o [Hermes Gadget](https://github.com/Adolanium/hermes-gadget-sdk) pareado, as perguntas do Hermes (comando perigoso,
@@ -107,12 +120,15 @@ Campos de senha nunca são mostrados de volta. O feed usa `Authorization: Bearer
 - [ ] Case impresso em 3D
 - [ ] Contador de vendas com alerta (webhook da plataforma → n8n → feed)
 - [ ] Aprovações vindas do n8n, além do Hermes
+- [ ] Login SSH por chave (precisa de mais espaço de firmware)
+- [ ] Teclado do Cardputer para o terminal
 
 ## Créditos
 - Fontes Barlow, Chakra Petch e IBM Plex Mono (SIL Open Font License 1.1), convertidas para VLW por `tools_fontgen.py`
   só com os caracteres usados.
 - Propagação: dados de Paul Herrman, N0NBH ([hamqsl.com](https://www.hamqsl.com/solar.html)). Órbita da ISS: [CelesTrak](https://celestrak.org/).
   Cálculo de passagens: [Sgp4-Library](https://github.com/Hopperpop/Sgp4-Library) (MIT).
+- Terminal: [LibSSH-ESP32](https://github.com/ewpa/LibSSH-ESP32), port do [libssh](https://www.libssh.org/) (LGPL-2.1).
 - [LovyanGFX](https://github.com/lovyan03/LovyanGFX), [ArduinoJson](https://arduinojson.org/),
   protocolo do [Hermes Gadget SDK](https://github.com/Adolanium/hermes-gadget-sdk), [Meshtastic](https://meshtastic.org/).
 

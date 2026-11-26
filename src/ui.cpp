@@ -362,7 +362,7 @@ static String dockLabel(int s) {
     case S_MESH: return "Mesh"; case S_PIHOLE: return "Pi-hole"; case S_AGENTE: return "Agente";
     case S_DECK: return "Deck"; case S_NEWS: return "Notícias"; case S_MAQ: return "Máquinas"; case S_APPS: return "Mais";
     case S_AGENDA: return "Agenda"; case S_BTC: return "Bitcoin"; case S_CLIMA: return "Clima"; case S_REDES: return "Seguidores";
-    case S_RADIO: return "Rádio"; case S_AVISOS: return "Avisos"; case S_APAGAO: return "Apagão";
+    case S_RADIO: return "Rádio"; case S_AVISOS: return "Avisos"; case S_APAGAO: return "Apagão"; case S_SSH: return "Terminal";
   }
   return "?";
 }
@@ -777,17 +777,295 @@ static void drawSnake() {
 
 static void drawJogos() {
   header("JOGOS");
-  const char* n[4] = {"Snake", "Blocos", "2048", "Pong"};
-  const char* d[4] = {"Toque na direção", "em breve", "em breve", "em breve"};
+  const char* n[4] = {"Snake", "Tanques", "2048", "Pong"};
+  const char* d[4] = {"Toque na direção", "Artilharia contra a placa", "em breve", "em breve"};
   for (int i = 0; i < 4; i++) {
     int x = 8 + (i % 2) * 156, y = 32 + (i / 2) * 78;
-    bool live_ = i == 0;
+    bool live_ = i <= 1;
     rrect(x, y, 148, 72, 6, live_ ? C_OR : C_CARD, live_ ? C_OR : C_LINE);
     text(x + 12, y + 12, n[i], F_CB24, live_ ? C_INK : C_MUTED, live_ ? C_OR : C_CARD);
     text(x + 12, y + 46, d[i], F_BM11, live_ ? C_INK : C_MUTED, live_ ? C_OR : C_CARD);
   }
   text(8, 196, "Recorde no Snake: " + String(cfg.snakeBest), F_BS13, C_INK, C_BG);
   text(8, 220, "Recordes ficam salvos na placa", F_BM11, C_MUTED, C_BG);
+}
+
+
+// ---------- tanks: turn-based artillery against the board ----------
+static const int TK_TOP = 26, TK_GROUND = 194;      // play field between the top bar and the controls
+static uint8_t tkH[320];                            // ground surface (screen y) per column
+static int tkX[2], tkHp[2], tkAng[2], tkPow[2], tkWind = 0, tkTurn = 0, tkPhase = 0, tkWinner = -1, tkShots = 0, tkBoomR = 0;
+static float tkPx, tkPy, tkVx, tkVy;                // shell
+static int tkTrailN = 0; static int16_t tkTrail[90][2];
+static int tkBx = 0, tkBy = 0;                      // last explosion
+static uint32_t tkTick = 0, tkWait = 0;
+enum { TK_AIM, TK_FLY, TK_BOOM, TK_OVER };
+static const float TK_K = 0.065f, TK_G = 0.12f;
+static int tkY(int i) { return tkH[constrain(tkX[i], 0, 319)]; }
+static void tanksNew() {
+  float a1 = random(10, 28), a2 = random(5, 16), f1 = random(8, 18) / 1000.0f, f2 = random(25, 45) / 1000.0f, ph1 = random(0, 628) / 100.0f, ph2 = random(0, 628) / 100.0f;
+  int base = random(130, 160);
+  for (int x = 0; x < 320; x++) tkH[x] = constrain((int)(base + a1 * sinf(x * f1 + ph1) + a2 * sinf(x * f2 + ph2)), 70, 184);
+  tkX[0] = random(24, 64); tkX[1] = random(256, 296);
+  for (int i = 0; i < 2; i++) {                     // a small flat pad under each tank
+    int y = tkH[tkX[i]];
+    for (int x = tkX[i] - 9; x <= tkX[i] + 9; x++) tkH[constrain(x, 0, 319)] = y;
+    tkHp[i] = 100;
+  }
+  tkAng[0] = 45; tkAng[1] = 135; tkPow[0] = 60; tkPow[1] = 60;
+  tkWind = random(-8, 9); tkTurn = 0; tkPhase = TK_AIM; tkWinner = -1; tkShots = 0; tkTrailN = 0;
+}
+static void tanksFire() {
+  float a = tkAng[tkTurn] * DEG_TO_RAD, v = tkPow[tkTurn] * TK_K;
+  tkPx = tkX[tkTurn] + cosf(a) * 11; tkPy = tkY(tkTurn) - 8 - sinf(a) * 11;
+  tkVx = cosf(a) * v; tkVy = -sinf(a) * v;
+  tkTrailN = 0; tkPhase = TK_FLY; tkShots++;
+}
+static int tanksSimulate(int ang, int pow, int from) {   // where a shot lands (x), for the board's aim
+  float a = ang * DEG_TO_RAD, v = pow * TK_K, x = tkX[from] + cosf(a) * 11, y = tkY(from) - 8 - sinf(a) * 11, vx = cosf(a) * v, vy = -sinf(a) * v;
+  for (int i = 0; i < 1500; i++) {
+    vx += tkWind * 0.004f; vy += TK_G; x += vx; y += vy;
+    if (x < 0 || x >= 320) return (int)x;
+    if (y >= tkH[(int)x]) return (int)x;
+  }
+  return (int)x;
+}
+static void tanksCpuAim() {
+  int target = tkX[0], bestP = 60, bestD = 9999, ang = random(118, 152);
+  for (int p = 20; p <= 100; p++) { int d = abs(tanksSimulate(ang, p, 1) - target); if (d < bestD) { bestD = d; bestP = p; } }
+  int err = max(2, 12 - tkShots);                   // gets sharper as the match goes on
+  tkAng[1] = ang; tkPow[1] = constrain(bestP + (int)random(-err, err + 1), 20, 100);
+}
+static void tanksExplode(int bx, int by) {
+  const int R = 16;
+  tkBx = bx; tkBy = by;
+  for (int x = bx - R; x <= bx + R; x++) {
+    if (x < 0 || x >= 320) continue;
+    int dy = (int)sqrtf(R * R - (x - bx) * (x - bx));
+    int bottom = min(TK_GROUND - 2, by + dy);
+    if (tkH[x] < bottom && tkH[x] > by - dy - 1) tkH[x] = bottom;          // the ground inside the blast goes
+    else if (tkH[x] <= by - dy - 1 && by + dy > tkH[x]) tkH[x] = min(TK_GROUND - 2, tkH[x] + 2 * dy);   // blast under the surface
+  }
+  for (int i = 0; i < 2; i++) {
+    float d = sqrtf((float)(tkX[i] - bx) * (tkX[i] - bx) + (float)(tkY(i) - 4 - by) * (tkY(i) - 4 - by));
+    if (d < R + 8) tkHp[i] = max(0, tkHp[i] - (int)lroundf(55 * (1 - d / (R + 8))));
+  }
+  tkBoomR = 1; tkPhase = TK_BOOM;
+}
+static void tanksStep() {
+  if (tkPhase == TK_FLY) {
+    for (int k = 0; k < 4; k++) {
+      tkVx += tkWind * 0.004f; tkVy += TK_G; tkPx += tkVx; tkPy += tkVy;
+      if (tkTrailN < 90 && (k & 1)) { tkTrail[tkTrailN][0] = tkPx; tkTrail[tkTrailN][1] = tkPy; tkTrailN++; }
+      if (tkPx < 0 || tkPx >= 320 || tkPy > TK_GROUND) { tkBoomR = 0; tkPhase = TK_BOOM; tkBx = -100; break; }   // out of the field
+      bool hitTank = false;
+      for (int i = 0; i < 2; i++) if (abs((int)tkPx - tkX[i]) <= 8 && tkPy >= tkY(i) - 9 && tkPy <= tkY(i)) hitTank = true;
+      if (tkPy >= tkH[(int)tkPx] || hitTank) { tanksExplode((int)tkPx, (int)tkPy); break; }
+    }
+  } else if (tkPhase == TK_BOOM) {
+    if (tkBoomR && tkBoomR < 16) { tkBoomR += 3; return; }
+    tkBoomR = 0; tkTrailN = 0;
+    if (tkHp[0] <= 0 || tkHp[1] <= 0) { tkWinner = tkHp[0] <= 0 && tkHp[1] <= 0 ? 2 : tkHp[1] <= 0 ? 0 : 1; tkPhase = TK_OVER; return; }
+    tkTurn ^= 1; tkPhase = TK_AIM;
+    if (tkTurn == 0) tkWind = constrain(tkWind + (int)random(-3, 4), -10, 10);   // the wind changes a little each round
+    else { tanksCpuAim(); tkWait = millis() + 900; }
+  } else if (tkPhase == TK_AIM && tkTurn == 1 && millis() > tkWait) tanksFire();
+}
+static void drawTank(int i) {
+  int x = tkX[i], y = tkY(i);
+  uint16_t c = i == 0 ? C_GREEN : C_RED;
+  float a = tkAng[i] * DEG_TO_RAD;
+  int bx = x + (int)lroundf(cosf(a) * 11), by = y - 8 - (int)lroundf(sinf(a) * 11);
+  spr.drawWideLine(x, y - 8 - yoff, bx, by - yoff, 2, C_INK);
+  rrect(x - 8, y - 7, 16, 7, 2, c, c);
+  circle(x, y - 8, 4, c);
+}
+static void drawTanks() {
+  rect(0, 0, 320, 24, C_CARD);
+  text(8, 4, "‹ Jogos", F_BS13, C_BLUE, C_CARD);
+  text(96, 5, "VOCÊ " + String(tkHp[0]), F_CS12, C_GREEN, C_CARD);
+  String w = tkWind == 0 ? String("sem vento") : String(tkWind < 0 ? "‹ vento " : "vento ") + abs(tkWind) + (tkWind > 0 ? " ›" : "");
+  text(206, 5, w, F_CS12, C_MUTED, C_CARD, 1);
+  text(312, 5, "CPU " + String(tkHp[1]), F_CS12, C_RED, C_CARD, 2);
+  rect(0, 24, 320, 2, C_OR);
+  rect(0, TK_TOP, 320, TK_GROUND - TK_TOP, C_BG);
+  for (int x = 0; x < 320; x++) spr.drawFastVLine(x, tkH[x] - yoff, TK_GROUND - tkH[x], C_SOFT == C_BG ? C_LINE : C_SOFT);
+  for (int x = 0; x < 320; x++) spr.drawPixel(x, tkH[x] - yoff, C_MUTED);
+  for (int i = 0; i < 2; i++) if (tkHp[i] > 0 || tkPhase != TK_OVER) drawTank(i);
+  for (int i = 0; i < tkTrailN; i++) spr.drawPixel(tkTrail[i][0], tkTrail[i][1] - yoff, C_MUTED);
+  if (tkPhase == TK_FLY) circle((int)tkPx, (int)tkPy, 2, C_INK);
+  if (tkPhase == TK_BOOM && tkBoomR) { circle(tkBx, tkBy, tkBoomR, C_OR); if (tkBoomR > 6) circle(tkBx, tkBy, tkBoomR - 6, C_WARN); }
+  // controls
+  rect(0, TK_GROUND, 320, 240 - TK_GROUND, C_CARD);
+  hline(0, TK_GROUND, 320, C_LINE);
+  if (tkPhase == TK_OVER) {
+    const char* m = tkWinner == 0 ? "Você venceu!" : tkWinner == 1 ? "A placa venceu" : "Empate";
+    text(160, 202, m, F_BS16, C_INK, C_CARD, 1);
+    text(160, 222, "toque pra jogar de novo", F_BM11, C_MUTED, C_CARD, 1);
+    return;
+  }
+  bool mine = tkTurn == 0 && tkPhase == TK_AIM;
+  uint16_t k = mine ? C_INK : C_MUTED;
+  const int Y = TK_GROUND + 6, H = 34;
+  rrect(4, Y, 30, H, 5, C_BG, C_LINE);   text(19, Y + 9, "‹", F_BS16, k, C_BG, 1);
+  text(64, Y + 3, "ângulo", F_BM11, C_MUTED, C_CARD, 1); text(64, Y + 16, String(tkAng[0]) + "°", F_BS16, k, C_CARD, 1);
+  rrect(94, Y, 30, H, 5, C_BG, C_LINE);  text(109, Y + 9, "›", F_BS16, k, C_BG, 1);
+  rrect(130, Y, 30, H, 5, C_BG, C_LINE); text(145, Y + 8, "−", F_BS16, k, C_BG, 1);
+  text(190, Y + 3, "força", F_BM11, C_MUTED, C_CARD, 1); text(190, Y + 16, String(tkPow[0]), F_BS16, k, C_CARD, 1);
+  rrect(220, Y, 30, H, 5, C_BG, C_LINE); text(235, Y + 8, "+", F_BS16, k, C_BG, 1);
+  rrect(256, Y, 60, H, 6, mine ? C_RED : C_LINE, mine ? C_RED : C_LINE);
+  text(286, Y + 9, tkTurn == 1 ? "CPU…" : "FOGO", F_BS13, C_WHITE, mine ? C_RED : C_LINE, 1);
+}
+static void tanksTap(int x, int y) {
+  if (y < 26 && x < 90) { uiGoto(S_JOGOS); return; }
+  if (tkPhase == TK_OVER) { tanksNew(); redraw = true; return; }
+  if (tkTurn != 0 || tkPhase != TK_AIM) return;
+  if (y >= TK_GROUND) {
+    if (x < 40) tkAng[0] = min(170, tkAng[0] + 2);          // ‹ turns the barrel left (up/back)
+    else if (x >= 88 && x < 126) tkAng[0] = max(10, tkAng[0] - 2);
+    else if (x >= 126 && x < 164) tkPow[0] = max(20, tkPow[0] - 2);
+    else if (x >= 214 && x < 252) tkPow[0] = min(100, tkPow[0] + 2);
+    else if (x >= 252) tanksFire();
+  } else if (y > TK_TOP) {                                  // tap the sky: aim there (direction and strength)
+    int dx = x - tkX[0], dy = (tkY(0) - 8) - y;
+    if (dy > 2) {
+      tkAng[0] = constrain((int)lroundf(atan2f(dy, dx) * RAD_TO_DEG), 10, 170);
+      tkPow[0] = constrain((int)(sqrtf(dx * dx + dy * dy) / 2.2f), 20, 100);
+    }
+  }
+  redraw = true;
+}
+
+
+// ---------- SSH terminal ----------
+static const int TM_Y = 14, TM_LH = 12, TM_CW = 6;   // top bar, line height, cell width (IBM Plex Mono 10 px)
+static bool tmKb = true;                              // touch keyboard shown
+static bool tmCtrl = false; static int tmMode = 0;    // 0 abc, 1 ABC (one-shot), 2 123
+static const char* TK_ROWS[3][3] = {{"qwertyuiop", "asdfghjkl", "zxcvbnm"}, {"QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM"}, {"1234567890", "-/:;()$&@\"", ".,?!'|~=+"}};
+static const int TKB_Y = 112, TKB_H = 23, TKB_G = 2;  // 5 rows of 23 px from y=112
+static uint32_t tmVersion = 0, tmLastDraw = 0;
+static uint16_t ansi(uint8_t c, bool fg) {
+  if (c == 255) return fg ? C_INK : C_BG;
+  bool dark = cfg.theme == 1;
+  static const uint32_t L[16] = {0x16191D, 0xB3261E, 0x1E7A3A, 0x8A6A12, 0x2D5FA8, 0x8B3FA0, 0x0B6E78, 0x5B6570,
+                                 0x6B7280, 0xD93025, 0x2B9348, 0xB7791F, 0x3B82F6, 0xA855F7, 0x0E9AA7, 0x16191D};
+  static const uint32_t D[16] = {0x2A2F2B, 0xFF6B5E, 0x2FD675, 0xFFB020, 0x6CA8FF, 0xD08CFF, 0x4FD8E0, 0xC9D0CA,
+                                 0x7D8A82, 0xFF8A80, 0x7CF0A8, 0xFFD166, 0x9CC5FF, 0xE3B5FF, 0x8EEBF0, 0xFFFFFF};
+  uint32_t v = (dark ? D : L)[c & 15];
+  return lcd.color565((v >> 16) & 0xFF, (v >> 8) & 0xFF, v & 0xFF);
+}
+static void tmKey(int x, int y, int w, const String& lab, bool dark) {
+  rrect(x, y, w, TKB_H, 4, dark ? C_INK : C_CARD, dark ? C_INK : C_LINE);
+  text(x + w / 2, y + 5, lab, F_BM11, dark ? C_WHITE : C_INK, dark ? C_INK : C_CARD, 1);
+}
+static int tmRowX(int n, int kw) { return (320 - (n * kw + (n - 1) * TKB_G)) / 2; }
+static void drawSsh() {
+  // top bar: leave, who, keyboard toggle
+  rect(0, 0, 320, TM_Y, C_CARD);
+  text(4, 1, "‹ sair", F_BM11, C_BLUE, C_CARD);
+  String who = sshState == 2 ? sshMsg : sshState == 1 ? String("conectando…") : String("terminal SSH");
+  text(160, 1, who, F_BM11, sshState == 2 ? C_GREEN : C_MUTED, C_CARD, 1);
+  text(316, 1, tmKb ? "esconder teclado" : "teclado", F_BM11, C_BLUE, C_CARD, 2);
+  int rows = tmKb ? (TKB_Y - TM_Y) / TM_LH : VT_ROWS;
+  int first = tmKb ? constrain(vt.cy - rows + 2, 0, VT_ROWS - rows) : 0;
+  rect(0, TM_Y, 320, rows * TM_LH + 2, C_BG);
+  if (sshState != 2 && sshState != 0 && !vt.version) {
+    wrap(8, TM_Y + 8, 304, sshMsg, F_BM13, C_MUTED, C_BG, 17, 4);
+  } else if (sshState == 0 || (sshState == 3 && !vt.version)) {
+    wrap(8, TM_Y + 8, 304, sshConfigured() ? "Toque em conectar para abrir o terminal em " + cfg.sshUser + "@" + cfg.sshHost + "."
+                                           : String("Configure o servidor em Config › Pelo celular (Terminal SSH)."), F_BM13, C_MUTED, C_BG, 17, 4);
+  } else {
+    font(T_BM11);
+    for (int r = 0; r < rows; r++) {
+      int vr = first + r, y = TM_Y + 1 + r * TM_LH;
+      int c = 0;
+      while (c < VT_COLS) {             // one run per stretch of equal colours
+        const VtCell& a = vt.cell[vr][c];
+        int c2 = c; String run;
+        while (c2 < VT_COLS && vt.cell[vr][c2].fg == a.fg && vt.cell[vr][c2].bg == a.bg && vt.cell[vr][c2].attr == a.attr) {
+          uint16_t ch = vt.cell[vr][c2].ch;
+          if (ch < 0x80) run += (char)ch; else if (ch < 0x800) { run += (char)(0xC0 | (ch >> 6)); run += (char)(0x80 | (ch & 0x3F)); }
+          else { run += (char)(0xE0 | (ch >> 12)); run += (char)(0x80 | ((ch >> 6) & 0x3F)); run += (char)(0x80 | (ch & 0x3F)); }
+          c2++;
+        }
+        bool inv = a.attr & VT_INVERSE;
+        uint16_t fg = ansi(a.fg, true), bg = ansi(a.bg, false);
+        if (a.attr & VT_BOLD && a.fg < 8 && a.fg != 255) fg = ansi(a.fg + 8, true);
+        if (inv) { uint16_t t = fg; fg = bg; bg = t; }
+        if (bg != C_BG) rect(c * TM_CW, y, (c2 - c) * TM_CW, TM_LH, bg);
+        int lead = 0; while (lead < (int)run.length() && run[lead] == ' ') lead++;   // spaces are just background
+        int end = run.length(); while (end > lead && run[end - 1] == ' ') end--;
+        if (end > lead) {
+          spr.setTextColor(fg, bg);
+          spr.setTextDatum(textdatum_t::top_left);
+          spr.drawString(run.substring(lead, end), (c + lead) * TM_CW, y - yoff);   // ASCII before any accented char keeps the column count
+        }
+        c = c2;
+      }
+      if (vt.cursorOn && vr == vt.cy && sshState == 2) rect(vt.cx * TM_CW, y + TM_LH - 3, TM_CW, 2, C_GREEN);
+    }
+  }
+  if (sshState != 2) {   // connect button
+    int y = tmKb ? TKB_Y - 40 : 196;
+    bool can = sshConfigured() && sshState != 1;
+    rrect(90, y, 140, 34, 6, can ? C_INK : C_LINE, can ? C_INK : C_LINE);
+    text(160, y + 9, sshState == 1 ? "conectando…" : "conectar", F_BS13, C_WHITE, can ? C_INK : C_LINE, 1);
+  }
+  if (!tmKb) return;
+  // keyboard: special row, 3 letter rows, bottom row
+  rect(0, TKB_Y - 2, 320, 240 - TKB_Y + 2, C_SOFT == C_BG ? C_CARD : C_SOFT);
+  const char* sp[8] = {"esc", "tab", "ctrl", "‹", "v", "^", "›", "del"};
+  for (int i = 0; i < 8; i++) tmKey(2 + i * 40, TKB_Y, 36, sp[i], (i == 2 && tmCtrl));
+  const char** rows3 = TK_ROWS[tmMode];
+  for (int r = 0; r < 3; r++) {
+    int n = strlen(rows3[r]), kw = 30, x0 = tmRowX(n, kw);
+    if (r == 2) x0 = tmRowX(n, kw);
+    for (int i = 0; i < n; i++) tmKey(x0 + i * (kw + TKB_G), TKB_Y + (r + 1) * (TKB_H + TKB_G), kw, String(rows3[r][i]), false);
+  }
+  int yb = TKB_Y + 4 * (TKB_H + TKB_G);
+  tmKey(2, yb, 46, tmMode == 2 ? "abc" : "123", false);
+  tmKey(50, yb, 46, tmMode == 1 ? "ABC" : "shift", tmMode == 1);
+  tmKey(98, yb, 150, "espaço", false);
+  tmKey(250, yb, 68, "enter", true);
+}
+static void tmSendKey(const char* s) { sshSend(s, strlen(s)); }
+static void sshTap(int x, int y) {
+  if (y < TM_Y + 4) {
+    if (x < 60) { sshStop(); uiGoto(S_APPS); return; }
+    if (x > 250) { tmKb = !tmKb; redraw = true; return; }
+    return;
+  }
+  if (sshState != 2) {
+    int by = tmKb ? TKB_Y - 40 : 196;
+    if (in(x, y, 90, by, 140, 34)) { sshStart(); redraw = true; return; }
+    if (!tmKb) return;
+  }
+  if (!tmKb || y < TKB_Y) return;
+  if (sshState != 2) { toast("Conecte primeiro"); return; }
+  int row = (y - TKB_Y) / (TKB_H + TKB_G);
+  if (row == 0) {
+    int i = constrain(x / 40, 0, 7);
+    const char* arrows[4] = {vt.appCursor ? "\x1bOD" : "\x1b[D", vt.appCursor ? "\x1bOB" : "\x1b[B", vt.appCursor ? "\x1bOA" : "\x1b[A", vt.appCursor ? "\x1bOC" : "\x1b[C"};
+    if (i == 0) tmSendKey("\x1b"); else if (i == 1) tmSendKey("\t"); else if (i == 2) { tmCtrl = !tmCtrl; redraw = true; }
+    else if (i <= 6) tmSendKey(arrows[i - 3]); else tmSendKey("\x7f");
+    return;
+  }
+  if (row >= 1 && row <= 3) {
+    const char* r = TK_ROWS[tmMode][row - 1];
+    int n = strlen(r), kw = 30, x0 = tmRowX(n, kw);
+    int i = (x - x0 + TKB_G / 2) / (kw + TKB_G);
+    if (x < x0 - TKB_G || i < 0 || i >= n) return;
+    char c = r[i];
+    if (tmCtrl && isalpha((unsigned char)c)) { c = toupper(c) & 0x1F; tmCtrl = false; redraw = true; }   // ctrl+c, ctrl+d...
+    sshSend(&c, 1);
+    if (tmMode == 1) { tmMode = 0; redraw = true; }
+    return;
+  }
+  if (x < 48) tmMode = tmMode == 2 ? 0 : 2;
+  else if (x < 96) tmMode = tmMode == 1 ? 0 : 1;
+  else if (x < 248) tmSendKey(" ");
+  else tmSendKey("\r");
+  redraw = true;
 }
 
 static int irDev = 0;
@@ -1004,7 +1282,7 @@ static int appsList(int* out) {
   const int md[12] = {M_AGENDA, M_NEWS, M_MAQ, M_BTC, M_CLIMA, M_REDES, M_PIHOLE, M_CASA, M_AGENTE, M_JOGOS, M_IR, M_MESH};
   int n = 0;
   for (int i = 0; i < 12; i++) if (MOD_ON(md[i])) out[n++] = sc[i];
-  out[n++] = S_RADIO; out[n++] = S_AVISOS; out[n++] = S_APAGAO;   // always there
+  out[n++] = S_RADIO; out[n++] = S_SSH; out[n++] = S_APAGAO;   // always there (Avisos: tap the top bar)
   return n;
 }
 static const int APP_PITCH = 41, APP_H = 37;
@@ -1566,12 +1844,14 @@ static void drawScreen() {
     case S_AVISOS: drawAvisos(); break;
     case S_RADIO: drawRadio(); break;
     case S_APAGAO: drawApagao(); break;
+    case S_SSH: drawSsh(); break;
+    case S_TANKS: drawTanks(); break;
   }
-  if (curScreen != S_CAL && curScreen != S_SNAKE) drawToast();
+  if (curScreen != S_CAL && curScreen != S_SNAKE && curScreen != S_SSH) drawToast();
 }
 
 static void render() {
-  bool scan = screenChanged && anim() && curScreen != S_SNAKE && curScreen != S_CAL;
+  bool scan = screenChanged && anim() && curScreen != S_SNAKE && curScreen != S_CAL && curScreen != S_TANKS && curScreen != S_SSH;
   screenChanged = false;
   curX = -1; curOn = false; pulseN = 0;
   xSemaphoreTake(dataLock, portMAX_DELAY);
@@ -1652,7 +1932,7 @@ bool uiScreenshot(Stream& out) {
 }
 
 // ---------- navigation & input ----------
-static const char* NAMES[S_COUNT] = {"home", "btc", "clima", "redes", "casa", "agente", "jogos", "snake", "ir", "mesh", "pihole", "agenda", "noticias", "maquinas", "apps", "mods", "config", "qr", "cal", "deck", "wifi", "wifiscan", "teclado", "wifirep", "inicio", "avisos", "radio", "apagao"};
+static const char* NAMES[S_COUNT] = {"home", "btc", "clima", "redes", "casa", "agente", "jogos", "snake", "ir", "mesh", "pihole", "agenda", "noticias", "maquinas", "apps", "mods", "config", "qr", "cal", "deck", "wifi", "wifiscan", "teclado", "wifirep", "inicio", "avisos", "radio", "apagao", "ssh", "tanques"};
 const char* screenName(int s) { return (s >= 0 && s < S_COUNT) ? NAMES[s] : "?"; }
 int screenFromName(const String& n) {
   for (int i = 0; i < S_COUNT; i++) if (n == NAMES[i]) return i;
@@ -1671,6 +1951,7 @@ void uiGoto(int s) {
   if (s == S_CASA || s == S_PIHOLE) netRequestRefresh();
   if (s == S_AGENDA || s == S_NEWS || s == S_MAQ) netRequestPlaca();
   if (s == S_RADIO) netRequestRadio();
+  if (s == S_TANKS && prev != S_TANKS && (tkPhase == TK_OVER || !tkX[1])) tanksNew();
   if (s == S_AVISOS) notifUnread = 0;
   if (s == S_WIFI) { wfForgetArm = -1; if (wifiJoin >= 2) wifiJoin = wifiJoin == 3 ? 3 : 0; }
   if (s == S_WIFISCAN && prev != S_KEYB) { wfPage = 0; netRequestScan(); }
@@ -1755,6 +2036,8 @@ void uiTap(int x, int y) {
       if (hitBack(x, y)) { uiGoto(S_CONFIG); return; }
       homeCfgTap(x, y);
       return;
+    case S_SSH: sshTap(x, y); return;
+    case S_TANKS: tanksTap(x, y); return;
     case S_AVISOS: {
       if (hitBack(x, y)) { uiGoto(S_HOME); return; }
       if (notifN && in(x, y, 214, 206, 98, 34)) { xSemaphoreTake(dataLock, portMAX_DELAY); notifN = 0; notifUnread = 0; xSemaphoreGive(dataLock); redraw = true; return; }
@@ -1814,6 +2097,7 @@ void uiTap(int x, int y) {
       break;
     case S_JOGOS:
       if (in(x, y, 8, 32, 148, 72)) uiGoto(S_SNAKE);
+      else if (in(x, y, 164, 32, 148, 72)) uiGoto(S_TANKS);
       else if (y > 30 && y < 190) toast("Esse jogo chega numa próxima versão");
       break;
     case S_IR:
@@ -1954,6 +2238,12 @@ void uiLoop() {
     if (down && !wasDown && millis() - lastTouch > 180) { lastTouch = millis(); wakeUntil = millis() + 30000; uiTap(x, y); }
     wasDown = down;
   }
+  // tanks animation and the board's turn
+  if (curScreen == S_TANKS && (tkPhase == TK_FLY || tkPhase == TK_BOOM || (tkPhase == TK_AIM && tkTurn == 1)) && millis() - tkTick > 30) {
+    tkTick = millis(); tanksStep(); redraw = true;
+  }
+  // terminal: redraw when the screen changed, at most ~20 times a second
+  if (curScreen == S_SSH && vt.version != tmVersion && millis() - tmLastDraw > 50) { tmVersion = vt.version; tmLastDraw = millis(); redraw = true; }
   // snake tick
   if (curScreen == S_SNAKE && !snDead && millis() - snTick > 170) { snTick = millis(); snakeStep(); redraw = true; }
   // clock / toast expiry

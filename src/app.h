@@ -1,6 +1,7 @@
 #pragma once
 #include <Arduino.h>
 #include "board.h"
+#include "vt.h"
 
 #define FW_VERSION "0.3.0"
 #define PROJECT_NAME "CyberCYDeck"
@@ -19,6 +20,8 @@ struct Config {
   String phUrl, phPass;       // Pi-hole v6 (local network)
   uint16_t mods = 0xF3F;      // enabled modules, see M_* below (IR and Mesh off by default)
   String feedToken;           // sent as "Authorization: Bearer <token>" to the feed
+  String sshHost, sshUser, sshPass, sshFp;   // SSH terminal (the password never leaves the board)
+  int sshPort = 22;
   String icalUrl;             // calendar .ics link (Google: "secret address in iCal format"); replaces the feed agenda
   bool alertBeep = false;     // beep on alerts (never at night)
   bool nightDim = true;       // dim the backlight from 23h to 7h
@@ -125,13 +128,22 @@ extern Notif notifs[NOTIF_MAX];       // newest first
 extern volatile int notifN, notifUnread;
 void notifyAdd(uint8_t kind, const String& title, const String& text);   // never call while holding dataLock
 
+// ---------- SSH terminal ----------
+extern Vt vt;                          // the terminal screen (guarded by dataLock)
+extern volatile int sshState;          // 0 off, 1 connecting, 2 open, 3 closed/failed
+extern String sshMsg;
+void sshStart();
+void sshStop();
+void sshSend(const char* s, int n);
+bool sshConfigured();
+
 // ---------- internet check (blackout mode) ----------
 extern volatile bool netOnline;        // a public address answered in the last check
 extern volatile uint32_t offlineSince; // millis() of the first failed check, 0 = online
 void netRequestRadio();                // fetch propagation + ISS pass now (opening the radio screen)
 
 // ---------- screens ----------
-enum Screen { S_HOME, S_BTC, S_CLIMA, S_REDES, S_CASA, S_AGENTE, S_JOGOS, S_SNAKE, S_IR, S_MESH, S_PIHOLE, S_AGENDA, S_NEWS, S_MAQ, S_APPS, S_MODS, S_CONFIG, S_QR, S_CAL, S_DECK, S_WIFI, S_WIFISCAN, S_KEYB, S_WIFIREP, S_HOMECFG, S_AVISOS, S_RADIO, S_APAGAO, S_COUNT };
+enum Screen { S_HOME, S_BTC, S_CLIMA, S_REDES, S_CASA, S_AGENTE, S_JOGOS, S_SNAKE, S_IR, S_MESH, S_PIHOLE, S_AGENDA, S_NEWS, S_MAQ, S_APPS, S_MODS, S_CONFIG, S_QR, S_CAL, S_DECK, S_WIFI, S_WIFISCAN, S_KEYB, S_WIFIREP, S_HOMECFG, S_AVISOS, S_RADIO, S_APAGAO, S_SSH, S_TANKS, S_COUNT };
 extern volatile int curScreen;
 void uiInit();
 void uiGoto(int s);

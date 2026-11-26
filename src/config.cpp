@@ -22,6 +22,8 @@ void configLoad() {
   bool migrate = prefs.getUChar("modsv", 0) < 3;
   cfg.feedToken = gs("feedtok");
   cfg.icalUrl = gs("ical");
+  cfg.sshHost = gs("sshhost"); cfg.sshUser = gs("sshuser"); cfg.sshPass = gs("sshpass"); cfg.sshFp = gs("sshfp");
+  cfg.sshPort = prefs.getInt("sshport", 22);
   cfg.alertBeep = prefs.getBool("abeep", false);
   cfg.nightDim = prefs.getBool("night", true);
   cfg.haUrl = gs("haurl"); cfg.haToken = gs("hatok");
@@ -82,6 +84,8 @@ void configSave() {
   prefs.putUChar("modsv", 3);
   prefs.putString("feedtok", cfg.feedToken);
   prefs.putString("ical", cfg.icalUrl);
+  prefs.putString("sshhost", cfg.sshHost); prefs.putString("sshuser", cfg.sshUser); prefs.putString("sshpass", cfg.sshPass);
+  prefs.putString("sshfp", cfg.sshFp); prefs.putInt("sshport", cfg.sshPort);
   prefs.putBool("abeep", cfg.alertBeep);
   prefs.putBool("night", cfg.nightDim);
   prefs.putString("haurl", cfg.haUrl); prefs.putString("hatok", cfg.haToken);

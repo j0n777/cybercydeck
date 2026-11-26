@@ -46,6 +46,7 @@ static void handleCommand(String cmd) {
     else if (k == "city") { cfg.city = v; cfg.lat = NAN; cfg.lon = NAN; }
     else if (k == "mods") cfg.mods = (uint16_t)strtol(v.c_str(), nullptr, 16);
     else if (k == "token") cfg.feedToken = v;
+    else if (k == "ical") cfg.icalUrl = v;
     else if (k == "feed") cfg.feedUrl = v;
     else if (k == "nome") cfg.nome = v;
     else if (k == "night") cfg.nightDim = v.toInt();
@@ -55,14 +56,14 @@ static void handleCommand(String cmd) {
     else if (k == "beep") cfg.alertBeep = v.toInt();
     else ok = false;
     if (ok) { configSave(); netRequestRefresh(); uiRequestRedraw(); Serial.printf("OK set %s\n", k.c_str()); }
-    else Serial.println("ERR key (nome, n8n, feed, token, phurl, phpass, city, mods, night, beep, theme 0|1|2, anim 0|1, apagao 0|1)");
+    else Serial.println("ERR key (nome, n8n, feed, token, phurl, phpass, city, mods, night, beep, theme 0|1|2, anim 0|1, apagao 0|1, ical)");
   }
   else if (head == "deck") deckLine(arg);   // status from the cyberdeck host, sent every few seconds
   else if (head == "hermes") { hermesInject(arg); Serial.println("OK"); }   // test: feed a Hermes frame
   else if (head == "notify") { notifyAdd(N_AGENTE, "Teste", arg); Serial.println("OK"); }
   else if (head == "cfg") {
-    Serial.printf("CFG nome=%s feed=%s n8n=%s phurl=%s phpass=%s token=%s night=%d beep=%d mods=%03X city=%s ssid=%s ssid2=%s ssid3=%s\n", cfg.nome.c_str(), cfg.feedUrl.c_str(), cfg.n8nUrl.c_str(), cfg.phUrl.c_str(),
-                  cfg.phPass.length() ? "(set)" : "", cfg.feedToken.length() ? "(set)" : "", cfg.nightDim, cfg.alertBeep, cfg.mods, cfg.city.c_str(), cfg.ssid.c_str(), cfg.ssid2.c_str(), cfg.ssid3.c_str());
+    Serial.printf("CFG nome=%s feed=%s n8n=%s phurl=%s phpass=%s token=%s ical=%s night=%d beep=%d mods=%03X city=%s ssid=%s ssid2=%s ssid3=%s\n", cfg.nome.c_str(), cfg.feedUrl.c_str(), cfg.n8nUrl.c_str(), cfg.phUrl.c_str(),
+                  cfg.phPass.length() ? "(set)" : "", cfg.feedToken.length() ? "(set)" : "", cfg.icalUrl.length() ? "(set)" : "", cfg.nightDim, cfg.alertBeep, cfg.mods, cfg.city.c_str(), cfg.ssid.c_str(), cfg.ssid2.c_str(), cfg.ssid3.c_str());
   }
   else if (head == "restart") ESP.restart();
   else if (head == "factory") { configFactoryReset(); Serial.println("OK factory reset, restarting"); delay(300); ESP.restart(); }

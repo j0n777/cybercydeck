@@ -28,6 +28,8 @@ Aceita o objeto direto ou embrulhado em `{"ok":true,"dados":{...}}`. `{"pendente
 - Máquinas: números inteiros (-1 = sem leitura). `disco` é o % do disco mais cheio; `idade_s` é há quanto tempo a máquina mandou o último sinal. As 3 primeiras aparecem na tela inicial.
 - Exemplo de servidor: `n8n/montar-feed.js` monta esse JSON a partir de um cache com uma chave por máquina.
 - Datas em ISO-8601; sem fuso, assume −03:00.
+- Com um link iCal configurado na placa, a agenda vem dele e a do feed é ignorada.
+- Workflow pronto para o n8n: [`n8n/README.md`](../n8n/README.md).
 
 ## Seguidores
 Lido a cada 15 min, sem token.

@@ -1,0 +1,90 @@
+# Builds the firmware on every version tag (v0.3.0, v0.4.0...), attaches the binaries to a GitHub
+# Release and publishes the web flasher (site/) with that version on GitHub Pages.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: pio-${{ hashFiles('platformio.ini') }}
+      - name: Tests (iCal reader, terminal)
+        run: |
+          g++ -Wall -o /tmp/ical-test tests/ical/teste.cpp src/ical.cpp && /tmp/ical-test tests/ical/exemplo.ics
+          g++ -Wall -o /tmp/vt-test tests/vt/teste.cpp src/vt.cpp && /tmp/vt-test
+      - name: Build
+        run: |
+          pip install platformio "esptool>=5,<6"
+          pio run
+      - name: Collect binaries and manifest
+        run: |
+          VERSION=$(sed -n 's/#define FW_VERSION "\(.*\)"/\1/p' src/app.h)
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          B=.pio/build/cyd
+          mkdir -p site/firmware
+          cp $B/bootloader.bin $B/partitions.bin $B/firmware.bin site/firmware/
+          cp ~/.platformio/packages/framework-arduinoespressif32/tools/partitions/boot_app0.bin site/firmware/
+          # full image for other flashers (erases the saved settings: it covers the NVS area)
+          python -m esptool --chip esp32 merge-bin -o site/firmware/cybercydeck-$VERSION-full.bin \
+            0x1000 $B/bootloader.bin 0x8000 $B/partitions.bin 0xe000 site/firmware/boot_app0.bin 0x10000 $B/firmware.bin
+          cp $B/firmware.bin site/firmware/cybercydeck-$VERSION-ota.bin
+          # the web flasher writes the parts and skips 0x9000 (NVS): Wi-Fi and settings survive an update
+          cat > site/manifest.json <<JSON
+          {
+            "name": "CyberCYDeck",
+            "version": "$VERSION",
+            "new_install_prompt_erase": true,
+            "new_install_improv_wait_time": 0,
+            "builds": [{
+              "chipFamily": "ESP32",
+              "parts": [
+                { "path": "firmware/bootloader.bin", "offset": 4096 },
+                { "path": "firmware/partitions.bin", "offset": 32768 },
+                { "path": "firmware/boot_app0.bin", "offset": 57344 },
+                { "path": "firmware/firmware.bin", "offset": 65536 }
+              ]
+            }]
+          }
+          JSON
+          sed -i "s/__VERSION__/$VERSION/g" site/index.html
+          (cd site/firmware && sha256sum cybercydeck-*.bin > SHA256SUMS.txt)
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --title "CyberCYDeck $VERSION" --generate-notes \
+            site/firmware/cybercydeck-$VERSION-ota.bin site/firmware/cybercydeck-$VERSION-full.bin site/firmware/SHA256SUMS.txt
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  pages:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4

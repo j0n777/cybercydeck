@@ -1,0 +1,353 @@
+{
+ "name": "CyberCYDeck · feed",
+ "nodes": [
+  {
+   "id": "520cabaa-a251-42d3-9b6a-2857d0e15ac1",
+   "name": "Receber sinal (POST)",
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2.1,
+   "position": [
+    0,
+    0
+   ],
+   "parameters": {
+    "httpMethod": "POST",
+    "path": "cybercydeck-sinal",
+    "responseMode": "responseNode",
+    "options": {}
+   }
+  },
+  {
+   "id": "b493fc42-d828-4ab5-b993-c04b891a17a9",
+   "name": "Token confere?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2.3,
+   "position": [
+    220,
+    0
+   ],
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "strict",
+      "version": 2
+     },
+     "conditions": [
+      {
+       "leftValue": "={{ $json.headers[\"x-cyd-token\"] }}",
+       "operator": {
+        "type": "string",
+        "operation": "equals"
+       },
+       "rightValue": "TROQUE-PELO-SEU-TOKEN"
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   }
+  },
+  {
+   "id": "dcc425af-472c-43eb-84a2-57c396620444",
+   "name": "Guardar no cache",
+   "type": "n8n-nodes-base.dataTable",
+   "typeVersion": 1.1,
+   "position": [
+    440,
+    -80
+   ],
+   "parameters": {
+    "resource": "row",
+    "operation": "upsert",
+    "dataTableId": {
+     "__rl": true,
+     "mode": "list",
+     "value": ""
+    },
+    "matchType": "allConditions",
+    "filters": {
+     "conditions": [
+      {
+       "keyName": "chave",
+       "condition": "eq",
+       "keyValue": "={{ $json.query.chave }}"
+      }
+     ]
+    },
+    "columns": {
+     "mappingMode": "defineBelow",
+     "value": {
+      "chave": "={{ $json.query.chave }}",
+      "dados": "={{ JSON.stringify($json.body) }}",
+      "recebido_em": "={{ $now.toISO() }}"
+     },
+     "matchingColumns": [
+      "chave"
+     ],
+     "schema": [
+      {
+       "id": "chave",
+       "displayName": "chave",
+       "required": false,
+       "defaultMatch": false,
+       "display": true,
+       "type": "string",
+       "canBeUsedToMatch": true
+      },
+      {
+       "id": "dados",
+       "displayName": "dados",
+       "required": false,
+       "defaultMatch": false,
+       "display": true,
+       "type": "string",
+       "canBeUsedToMatch": true
+      },
+      {
+       "id": "recebido_em",
+       "displayName": "recebido_em",
+       "required": false,
+       "defaultMatch": false,
+       "display": true,
+       "type": "dateTime",
+       "canBeUsedToMatch": true
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "90b6b414-75cb-4b6a-aa65-ff22e3cd93bb",
+   "name": "Responder OK",
+   "type": "n8n-nodes-base.respondToWebhook",
+   "typeVersion": 1.5,
+   "position": [
+    660,
+    -80
+   ],
+   "parameters": {
+    "respondWith": "json",
+    "responseBody": "{\"ok\":true}",
+    "options": {}
+   }
+  },
+  {
+   "id": "b3539922-57bd-4162-af65-d323e304ab62",
+   "name": "Responder 401",
+   "type": "n8n-nodes-base.respondToWebhook",
+   "typeVersion": 1.5,
+   "position": [
+    660,
+    120
+   ],
+   "parameters": {
+    "respondWith": "json",
+    "responseBody": "{\"ok\":false,\"erro\":\"token\"}",
+    "options": {
+     "responseCode": 401
+    }
+   }
+  },
+  {
+   "id": "2d4a6248-ba7b-43c8-9bc5-aaf3e9bd408a",
+   "name": "Placa lê o feed (GET)",
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2.1,
+   "position": [
+    0,
+    320
+   ],
+   "parameters": {
+    "httpMethod": "GET",
+    "path": "cybercydeck-feed",
+    "responseMode": "responseNode",
+    "options": {}
+   }
+  },
+  {
+   "id": "9be795eb-f08a-43c4-93e0-acd5e6a5e9b8",
+   "name": "Bearer confere?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2.3,
+   "position": [
+    220,
+    320
+   ],
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "strict",
+      "version": 2
+     },
+     "conditions": [
+      {
+       "leftValue": "={{ $json.headers[\"authorization\"] }}",
+       "operator": {
+        "type": "string",
+        "operation": "equals"
+       },
+       "rightValue": "Bearer TROQUE-PELO-SEU-TOKEN"
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   }
+  },
+  {
+   "id": "82f6c755-593f-4e62-a2c0-9b05b4e65257",
+   "name": "Ler o cache",
+   "type": "n8n-nodes-base.dataTable",
+   "typeVersion": 1.1,
+   "position": [
+    440,
+    260
+   ],
+   "parameters": {
+    "resource": "row",
+    "operation": "get",
+    "dataTableId": {
+     "__rl": true,
+     "mode": "list",
+     "value": ""
+    },
+    "matchType": "allConditions",
+    "filters": {
+     "conditions": []
+    },
+    "returnAll": true
+   },
+   "alwaysOutputData": true
+  },
+  {
+   "id": "c8e4045c-3bd0-4334-9cbb-af90cc295334",
+   "name": "Montar feed",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    660,
+    260
+   ],
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "language": "javaScript",
+    "jsCode": "// Feed do CyberCYDeck: junta maq_* (máquinas) e uso_cc_* (uso de IA) do cache num JSON só (docs/feed.md).\nconst rows = $input.all().map(i => i.json).filter(r => r && r.chave);\nconst agora = Date.now();\n// troque pelos hostnames das suas máquinas: chave = host que o agente de monitoramento manda, valor = nome na tela\nconst NOMES = { servidor: 'Servidor', pi: 'Raspberry Pi' };\nconst ORDEM = ['servidor', 'pi'];   // ordem na tela; as outras vêm depois\nconst parse = (s) => { try { return JSON.parse(s); } catch (e) { return null; } };\nconst int = (v) => (typeof v === 'number' && isFinite(v)) ? Math.round(v) : -1;\n\nconst maquinas = [];\nfor (const r of rows.filter(r => r.chave.startsWith('maq_') && r.chave !== 'maq_teste')) {\n  const d = parse(r.dados); if (!d) continue;\n  const host = d.host || r.chave.slice(4);\n  const idade = Math.round((agora - new Date(r.recebido_em).getTime()) / 1000);\n  if (idade > 7 * 86400) continue;   // máquina aposentada: some da lista\n  const discos = (d.discos || []).filter(x => x.total_gb >= 1 && !String(x.dispositivo || '').includes('zram'));\n  const disco = discos.length ? Math.round(Math.max(...discos.map(x => x.pct || 0))) : -1;\n  maquinas.push({\n    id: host, n: NOMES[host] || host, on: idade < 600, idade_s: idade,\n    cpu: int(d.cpu_pct), ram: int(d.ram_pct), temp: int(d.temp), disco, up: int(d.uptime_s),\n    falhas: (d.servicos_falhos || []).length,\n  });\n}\nmaquinas.sort((a, b) => ((ORDEM.indexOf(a.id) + 1) || 99) - ((ORDEM.indexOf(b.id) + 1) || 99));\n\n// uso de IA dos últimos 30 dias, só de máquinas que mandaram nos últimos 3 dias\nconst desde = new Date(agora - 30 * 86400e3).toISOString().slice(0, 10);\nlet custo = 0, tokens = 0; const porMaq = [];\nfor (const r of rows.filter(r => r.chave.startsWith('uso_cc_') && r.chave !== 'uso_cc_teste')) {\n  if (agora - new Date(r.recebido_em).getTime() > 3 * 86400e3) continue;\n  const d = parse(r.dados); const dias = Array.isArray(d) ? d : (d && d.daily) || [];\n  let c = 0, t = 0;\n  for (const x of dias) if (String(x.date || x.period || '') >= desde) { c += x.totalCost || 0; t += x.totalTokens || 0; }\n  custo += c; tokens += t;\n  const h = r.chave.slice(7); porMaq.push({ n: NOMES[h] || h, custo: Math.round(c * 100) / 100 });\n}\n\nlet saude = 'ok';\nif (maquinas.some(m => m.disco >= 85 || m.temp >= 80)) saude = 'alerta';\nif (maquinas.some(m => !m.on || m.disco >= 95)) saude = 'critico';\n\nreturn [{ json: {\n  ok: true, saude, maquinas,\n  ia: { custo_usd: Math.round(custo * 100) / 100, tokens, por_maquina: porMaq },\n  gerado_em: new Date(agora).toISOString(),\n} }];\n"
+   }
+  },
+  {
+   "id": "b887210d-ef82-4b50-98a6-df1e98525701",
+   "name": "Responder feed",
+   "type": "n8n-nodes-base.respondToWebhook",
+   "typeVersion": 1.5,
+   "position": [
+    880,
+    260
+   ],
+   "parameters": {
+    "respondWith": "firstIncomingItem",
+    "options": {}
+   }
+  }
+ ],
+ "connections": {
+  "Receber sinal (POST)": {
+   "main": [
+    [
+     {
+      "node": "Token confere?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Token confere?": {
+   "main": [
+    [
+     {
+      "node": "Guardar no cache",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Responder 401",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Guardar no cache": {
+   "main": [
+    [
+     {
+      "node": "Responder OK",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Placa lê o feed (GET)": {
+   "main": [
+    [
+     {
+      "node": "Bearer confere?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Bearer confere?": {
+   "main": [
+    [
+     {
+      "node": "Ler o cache",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Responder 401",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Ler o cache": {
+   "main": [
+    [
+     {
+      "node": "Montar feed",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Montar feed": {
+   "main": [
+    [
+     {
+      "node": "Responder feed",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  }
+ },
+ "settings": {
+  "executionOrder": "v1"
+ },
+ "pinData": {}
+}

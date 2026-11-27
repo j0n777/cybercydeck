@@ -7,7 +7,7 @@
 #include <ArduinoJson.h>
 #include <time.h>
 #include <Update.h>
-#include "certs.h"
+#include "ca_bundle.h"   // Mozilla roots, checked one at a time (tools/gen_ca_bundle.py)
 #include <Sgp4.h>
 
 volatile bool wifiUp = false, apMode = false;
@@ -61,7 +61,7 @@ static bool httpGet(const String& url, String& body, const String& bearer = "", 
   WiFiClientSecure sec;
   WiFiClient plain;
   bool ok;
-  if (url.startsWith("https")) { sec.setCACert(ROOT_CAS); ok = http.begin(sec, url); }
+  if (url.startsWith("https")) { sec.setCACertBundle(CA_BUNDLE); ok = http.begin(sec, url); }
   else ok = http.begin(plain, url);
   if (!ok) return false;
   http.setTimeout(8000);
@@ -89,7 +89,7 @@ static bool httpPost(const String& url, const String& payload, const String& bea
   WiFiClientSecure sec;
   WiFiClient plain;
   bool ok;
-  if (url.startsWith("https")) { sec.setCACert(ROOT_CAS); ok = http.begin(sec, url); }
+  if (url.startsWith("https")) { sec.setCACertBundle(CA_BUNDLE); ok = http.begin(sec, url); }
   else ok = http.begin(plain, url);
   if (!ok) return false;
   http.setTimeout(8000);
@@ -853,7 +853,7 @@ static void fetchIcal() {
   HTTPClient http;
   WiFiClientSecure sec;
   WiFiClient plain;
-  bool ok = cfg.icalUrl.startsWith("https") ? (sec.setCACert(ROOT_CAS), http.begin(sec, cfg.icalUrl)) : http.begin(plain, cfg.icalUrl);
+  bool ok = cfg.icalUrl.startsWith("https") ? (sec.setCACertBundle(CA_BUNDLE), http.begin(sec, cfg.icalUrl)) : http.begin(plain, cfg.icalUrl);
   if (!ok) { delete agp; lock(); live.icErr = "link da agenda inválido"; unlock(); return; }
   http.setTimeout(10000);
   http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
@@ -934,7 +934,7 @@ static void fwInstall() {
   auto fail = [](const String& m) { logf("[net] atualização falhou: %s", m.c_str()); lock(); live.fwErr = m; live.fwProg = -1; unlock(); uiRequestRedraw(); };
   lock(); live.fwProg = 0; live.fwErr = ""; unlock(); uiRequestRedraw();
   HTTPClient http; WiFiClientSecure sec;
-  sec.setCACert(ROOT_CAS);
+  sec.setCACertBundle(CA_BUNDLE);
   if (!http.begin(sec, url)) { fail("endereço inválido"); return; }
   http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
   http.setTimeout(15000);

@@ -124,6 +124,8 @@ Campos de senha nunca são mostrados de volta. O feed usa `Authorization: Bearer
 - [ ] Teclado do Cardputer para o terminal
 
 ## Créditos
+- Certificados: raízes da Mozilla (pacote certifi) mais três raízes antigas ainda usadas em assinaturas cruzadas,
+  num pacote compacto (`tools/gen_ca_bundle.py`): cada conexão HTTPS só lê a raiz que assinou o site.
 - Fontes Barlow, Chakra Petch e IBM Plex Mono (SIL Open Font License 1.1), convertidas para VLW por `tools_fontgen.py`
   só com os caracteres usados.
 - Propagação: dados de Paul Herrman, N0NBH ([hamqsl.com](https://www.hamqsl.com/solar.html)). Órbita da ISS: [CelesTrak](https://celestrak.org/).

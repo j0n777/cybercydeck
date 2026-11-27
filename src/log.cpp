@@ -3,7 +3,7 @@
 #include "app.h"
 #include <stdarg.h>
 
-static const int LOG_N = 30, LOG_W = 100;
+static const int LOG_N = 24, LOG_W = 150;
 static char ring[LOG_N][LOG_W];
 static uint32_t ringAt[LOG_N];
 static int head = 0, count = 0;

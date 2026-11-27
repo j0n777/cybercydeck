@@ -642,6 +642,7 @@ static void handleStatus() {
   d["erro_feed"] = live.plErr; d["erro_agenda"] = live.icErr;
   { time_t t; time(&t); d["relogio_ok"] = t > 1700000000; d["epoch"] = (long)t; }
   d["versao_github"] = live.fwLatest;
+  d["build"] = __DATE__ " " __TIME__;
   String s; serializeJson(d, s);
   server.send(200, "application/json", s);
 }

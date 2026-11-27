@@ -2148,7 +2148,8 @@ void uiTap(int x, int y) {
 // ---------- init & loop ----------
 void uiInit() {
   spr.setColorDepth(16);
-  const int tries[5] = {120, 80, 60, 48, 40};
+  // 80 px strips (51 KB): a 120 px one (77 KB) left too little memory for HTTPS next to the SSH code
+  const int tries[4] = {80, 60, 48, 40};
   for (int h : tries) { if (spr.createSprite(320, h)) { stripH = h; break; } }
   logf("[ui] strip %dpx, free heap %u, largest %u\n", stripH, ESP.getFreeHeap(), ESP.getMaxAllocHeap());
   themePalette();

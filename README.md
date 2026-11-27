@@ -31,27 +31,22 @@ Firmware para a **ESP32-2432S028 ("Cheap Yellow Display", CYD)** que funciona de
 | `site/` | página de gravação pelo navegador (publicada no GitHub Pages) |
 | `tests/` | testes do leitor de iCal e do terminal; rodam no computador e no GitHub Actions |
 
-## Gravar a CYD
-**Pelo navegador (mais fácil):** abra **https://j0n777.github.io/cybercydeck/** no Chrome ou no Edge de um computador,
-ligue a placa no USB e clique em instalar. A página sempre traz a versão mais nova. Para atualizar uma placa que já usa o
-CyberCYDeck, deixe desmarcado "Erase device": Wi-Fi e configurações continuam.
+## Gravar e atualizar
+**Primeira vez, pelo navegador:** abra **https://j0n777.github.io/cybercydeck/** no Chrome ou no Edge de um computador,
+ligue a placa no USB e clique em instalar. A página sempre traz a versão mais nova.
 
-**Pelo Wi-Fi:** `http://<ip-da-placa>/update`, com o arquivo `cybercydeck-<versão>-ota.bin` da
-[última release](https://github.com/j0n777/cybercydeck/releases/latest) e o PIN do portal (vai num cabeçalho, nunca no endereço).
+**Depois, pela própria placa:** ela consulta as releases do GitHub ao ligar e a cada 12 h. Quando há versão nova,
+aparece um aviso e, em **Config**, a linha da versão diz "nova versão: toque para instalar" (dois toques). Também dá
+no portal, em **Firmware**. A placa baixa o `-ota.bin` da release por HTTPS, confere o SHA-256 contra o
+`SHA256SUMS.txt` da mesma release enquanto grava, e só então troca de versão. Wi-Fi e configurações ficam.
 
-**Pelo PlatformIO:**
-```
-pio run -t upload          # ou grave o firmware.bin em 0x10000 com o esptool
-```
-A imagem `-full.bin` das releases vai em 0x0 e apaga as configurações salvas.
+**Outras formas:** `http://<ip-da-placa>/update` com o `.bin` e o PIN; ou `pio run -t upload`. A imagem `-full.bin`
+das releases vai em 0x0 e apaga as configurações salvas.
 
 ### Publicar uma versão
-Mude `FW_VERSION` em `src/app.h` e crie a tag (`git tag v0.4.0 && git push origin v0.4.0`). O GitHub Actions compila,
-anexa os `.bin` na release e atualiza a página de gravação.
-Primeiro uso: calibrar o toque (4 alvos) → escolher a rede em **Config › Wi-Fi** (procura as redes, teclado na tela, guarda até 3;
-na quarta pergunta qual substituir). O resto (feed, Pi-hole, Home Assistant) se preenche pelo celular: rede **CyberCYDeck** ou o IP da placa. Tudo fica salvo na placa. Atualizações depois: `http://<ip-da-placa>/update`.
-
-Sem Wi-Fi configurado a placa funciona igual como tela do deck.
+Mude `FW_VERSION` em `src/app.h` e faça o merge na `main`. O GitHub Actions testa, compila, cria a release
+`v<versão>` com os `.bin` e atualiza a página de gravação. Pull requests só testam e compilam. Em fork, troque
+`UPDATE_REPO` em `src/app.h`.
 
 ## Agenda
 No Google Agenda, abra **Configurações** › o seu calendário › **Integrar agenda** e copie o
@@ -129,6 +124,8 @@ Campos de senha nunca são mostrados de volta. O feed usa `Authorization: Bearer
 - [ ] Teclado do Cardputer para o terminal
 
 ## Créditos
+- Certificados: raízes da Mozilla (pacote certifi) mais três raízes antigas ainda usadas em assinaturas cruzadas,
+  num pacote compacto (`tools/gen_ca_bundle.py`): cada conexão HTTPS só lê a raiz que assinou o site.
 - Fontes Barlow, Chakra Petch e IBM Plex Mono (SIL Open Font License 1.1), convertidas para VLW por `tools_fontgen.py`
   só com os caracteres usados.
 - Propagação: dados de Paul Herrman, N0NBH ([hamqsl.com](https://www.hamqsl.com/solar.html)). Órbita da ISS: [CelesTrak](https://celestrak.org/).

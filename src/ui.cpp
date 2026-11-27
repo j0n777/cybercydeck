@@ -1324,6 +1324,7 @@ static void drawMods() {
   text(8, 222, "Toque pra ligar ou desligar. Fica salvo na placa.", F_BM11, C_MUTED, C_BG);
 }
 
+static uint32_t fwArmUntil = 0;   // first tap on the version line arms the install
 static void drawConfig() {
   header("CONFIG");
   card(8, 30, 304, 150);
@@ -1361,7 +1362,16 @@ static void drawConfig() {
   }
   rrect(8, 186, 304, 32, 6, C_INK, C_INK);
   text(160, 194, "Configurar pelo celular", F_BS13, C_WHITE, C_INK, 1);
-  text(8, 224, "v" FW_VERSION " · tudo salvo na placa", F_BM11, C_MUTED, C_BG);
+  if (live.fwProg >= 0) {
+    rect(8, 226, 304, 6, C_SOFT); rect(8, 226, 304 * live.fwProg / 100, 6, C_GREEN);
+    text(8, 212, "instalando a versão " + live.fwLatest + "… " + live.fwProg + "% (não desligue)", F_BM11, C_INK, C_BG);
+  } else if (fwNewer()) {
+    bool armed = millis() < fwArmUntil;
+    text(8, 224, armed ? "toque de novo para instalar a " + live.fwLatest : "v" FW_VERSION " · nova versão " + live.fwLatest + ": toque para instalar", F_BM11, C_WARN, C_BG);
+  } else {
+    String st = live.fwErr.length() ? live.fwErr : live.fwLatest.length() ? String("é a mais nova") : String("toque para procurar atualização");
+    text(8, 224, "v" FW_VERSION " · " + st, F_BM11, C_MUTED, C_BG);
+  }
 }
 
 static void drawQr() {
@@ -2114,6 +2124,12 @@ void uiTap(int x, int y) {
       break;
     case S_CONFIG:
       if (in(x, y, 8, 30, 304, 28)) { uiGoto(S_WIFI); return; }
+      if (y >= 218 && live.fwProg < 0) {
+        if (!fwNewer()) { netRequestFwCheck(); toast("Procurando atualização…"); return; }
+        if (millis() < fwArmUntil) { fwArmUntil = 0; netRequestFwInstall(); toast("Baixando a versão " + live.fwLatest + "…", 4000); }
+        else { fwArmUntil = millis() + 4000; redraw = true; }
+        return;
+      }
       if (in(x, y, 80, 58, 40, 32)) { cfg.bright = max(20, cfg.bright - 25); lcd.setBrightness(cfg.bright); configSave(); redraw = true; }
       else if (in(x, y, 246, 58, 40, 32)) { cfg.bright = min(255, cfg.bright + 25); lcd.setBrightness(cfg.bright); configSave(); redraw = true; }
       else if (in(x, y, 82, 94, 104, 28)) { cfg.theme = (cfg.theme + 1) % 3; configSave(); uiApplyTheme(); screenChanged = true; }
@@ -2132,7 +2148,8 @@ void uiTap(int x, int y) {
 // ---------- init & loop ----------
 void uiInit() {
   spr.setColorDepth(16);
-  const int tries[5] = {120, 80, 60, 48, 40};
+  // 80 px strips (51 KB): a 120 px one (77 KB) left too little memory for HTTPS next to the SSH code
+  const int tries[4] = {80, 60, 48, 40};
   for (int h : tries) { if (spr.createSprite(320, h)) { stripH = h; break; } }
   logf("[ui] strip %dpx, free heap %u, largest %u\n", stripH, ESP.getFreeHeap(), ESP.getMaxAllocHeap());
   themePalette();

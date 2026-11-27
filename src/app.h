@@ -4,6 +4,7 @@
 #include "vt.h"
 
 #define FW_VERSION "0.3.0"
+#define UPDATE_REPO "j0n777/cybercydeck"   // GitHub releases the board updates from (change it in a fork)
 #define PROJECT_NAME "CyberCYDeck"
 #define AP_SSID "CyberCYDeck"
 #define HOSTNAME "cybercydeck"
@@ -96,6 +97,8 @@ struct LiveData {
   uint8_t rdBand[2][4] = {{0}};      // [day, night][80-40, 30-20, 17-15, 12-10]: 0 ?, 1 ruim, 2 regular, 3 boa
   bool issOk = false; uint32_t issAos = 0, issLos = 0; int issMaxEl = -1, issAzAos = -1, issAzLos = -1;
   String rdErr;
+  // firmware updates from the GitHub releases of UPDATE_REPO
+  String fwLatest, fwUrl, fwSha, fwErr; uint32_t fwAt = 0; int fwProg = -1;   // fwProg: -1 idle, 0..100 installing
 };
 extern LiveData live;
 extern SemaphoreHandle_t dataLock;
@@ -146,7 +149,10 @@ void sshStop();
 // ---------- internet check (blackout mode) ----------
 extern volatile bool netOnline;        // a public address answered in the last check
 extern volatile uint32_t offlineSince; // millis() of the first failed check, 0 = online
-void netRequestRadio();                // fetch propagation + ISS pass now (opening the radio screen)
+void netRequestRadio();
+void netRequestFwCheck();              // look for a newer release now
+void netRequestFwInstall();            // download, check SHA-256 and install the newer release
+bool fwNewer();                        // a newer release was found                // fetch propagation + ISS pass now (opening the radio screen)
 
 // ---------- screens ----------
 enum Screen { S_HOME, S_BTC, S_CLIMA, S_REDES, S_CASA, S_AGENTE, S_JOGOS, S_SNAKE, S_IR, S_MESH, S_PIHOLE, S_AGENDA, S_NEWS, S_MAQ, S_APPS, S_MODS, S_CONFIG, S_QR, S_CAL, S_DECK, S_WIFI, S_WIFISCAN, S_KEYB, S_WIFIREP, S_HOMECFG, S_AVISOS, S_RADIO, S_APAGAO, S_SSH, S_TANKS, S_COUNT };

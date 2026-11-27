@@ -7,7 +7,7 @@
 #include <ArduinoJson.h>
 #include <time.h>
 #include <Update.h>
-#include "certs.h"
+#include "ca_bundle.h"   // Mozilla roots, checked one at a time (tools/gen_ca_bundle.py)
 #include <Sgp4.h>
 
 volatile bool wifiUp = false, apMode = false;
@@ -61,10 +61,11 @@ static bool httpGet(const String& url, String& body, const String& bearer = "", 
   WiFiClientSecure sec;
   WiFiClient plain;
   bool ok;
-  if (url.startsWith("https")) { sec.setCACert(ROOT_CAS); ok = http.begin(sec, url); }
+  if (url.startsWith("https")) { sec.setCACertBundle(CA_BUNDLE); ok = http.begin(sec, url); }
   else ok = http.begin(plain, url);
   if (!ok) return false;
   http.setTimeout(8000);
+  http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
   http.addHeader("Accept", accept);
   if (bearer.length()) http.addHeader("Authorization", "Bearer " + bearer);
   if (hName && hVal.length()) http.addHeader(hName, hVal);
@@ -88,7 +89,7 @@ static bool httpPost(const String& url, const String& payload, const String& bea
   WiFiClientSecure sec;
   WiFiClient plain;
   bool ok;
-  if (url.startsWith("https")) { sec.setCACert(ROOT_CAS); ok = http.begin(sec, url); }
+  if (url.startsWith("https")) { sec.setCACertBundle(CA_BUNDLE); ok = http.begin(sec, url); }
   else ok = http.begin(plain, url);
   if (!ok) return false;
   http.setTimeout(8000);
@@ -550,6 +551,9 @@ static void handleRoot() {
   h += String("<label class=chk><input type=checkbox name=night") + (cfg.nightDim ? " checked" : "") + "> Modo noite (brilho baixo das 23h às 7h)</label>";
   h += String("<label class=chk><input type=checkbox name=abeep") + (cfg.alertBeep ? " checked" : "") + "> Bipe nos avisos (nunca de madrugada)</label>";
   h += F("<input type=hidden name=opts_form value=1>");
+  h += "<h2>FIRMWARE</h2><p>Esta placa: <b>" FW_VERSION "</b>";
+  if (fwNewer()) h += " · nova versão <b>" + esc(live.fwLatest) + "</b> no GitHub. Marque abaixo e salve com o PIN para instalar.</p><label class=chk><input type=checkbox name=fwinst> Instalar a versão " + esc(live.fwLatest) + " agora</label>";
+  else h += live.fwLatest.length() ? " · é a mais nova</p>" : " · ainda não consultei o GitHub</p>";
   h += F("<h2>AGENDA <small>(link iCal: no Google Agenda, Configurações do calendário › Integrar agenda › Endereço secreto no formato iCal)</small></h2>");
   h += secretField("ical", "Link .ics da agenda (substitui a agenda do feed)", cfg.icalUrl.length() > 0, "https://calendar.google.com/calendar/ical/.../basic.ics");
   if (cfg.icalUrl.length()) h += F("<label class=chk><input type=checkbox name=icalclr> Remover o link da agenda</label>");
@@ -600,6 +604,7 @@ static void handleSave() {
   take("ssid3", cfg.ssid3); takeSecret("wpass3", cfg.wpass3);
   take("n8n", cfg.n8nUrl);
   take("phurl", cfg.phUrl); takeSecret("phpass", cfg.phPass);
+  if (server.hasArg("fwinst")) netRequestFwInstall();
   take("nome", cfg.nome); take("feed", cfg.feedUrl); takeSecret("feedtok", cfg.feedToken);
   takeSecret("ical", cfg.icalUrl); if (server.hasArg("icalclr")) cfg.icalUrl = "";
   if (server.hasArg("opts_form")) { cfg.nightDim = server.hasArg("night"); cfg.alertBeep = server.hasArg("abeep"); }
@@ -635,6 +640,9 @@ static void handleStatus() {
   d["net_beat_s"] = (millis() - netHeartbeat) / 1000; d["online"] = (bool)netOnline; d["ssh"] = sshState;
   d["btc"] = live.btc; d["wx"] = live.wxOk; d["feed"] = live.plOk; d["agenda"] = live.agN; d["hermes"] = hermes.status;
   d["erro_feed"] = live.plErr; d["erro_agenda"] = live.icErr;
+  { time_t t; time(&t); d["relogio_ok"] = t > 1700000000; d["epoch"] = (long)t; }
+  d["versao_github"] = live.fwLatest;
+  d["build"] = __DATE__ " " __TIME__;
   String s; serializeJson(d, s);
   server.send(200, "application/json", s);
 }
@@ -846,7 +854,7 @@ static void fetchIcal() {
   HTTPClient http;
   WiFiClientSecure sec;
   WiFiClient plain;
-  bool ok = cfg.icalUrl.startsWith("https") ? (sec.setCACert(ROOT_CAS), http.begin(sec, cfg.icalUrl)) : http.begin(plain, cfg.icalUrl);
+  bool ok = cfg.icalUrl.startsWith("https") ? (sec.setCACertBundle(CA_BUNDLE), http.begin(sec, cfg.icalUrl)) : http.begin(plain, cfg.icalUrl);
   if (!ok) { delete agp; lock(); live.icErr = "link da agenda inválido"; unlock(); return; }
   http.setTimeout(10000);
   http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
@@ -872,6 +880,94 @@ static void fetchIcal() {
   logf("[net] ical %u KB, %ld eventos, %d próximos\n", (unsigned)(sink.total / 1024), evs, n);
 }
 
+
+// ---------- updates from the GitHub releases ----------
+// The board asks the GitHub API for the latest release of UPDATE_REPO, downloads its
+// cybercydeck-<version>-ota.bin over HTTPS, checks it against the release's SHA256SUMS.txt while
+// writing, and only then switches to it. Nothing installs by itself: you tap to install.
+#include <Update.h>
+#include <mbedtls/sha256.h>
+static volatile bool fwCheckReq = false, fwInstallReq = false;
+void netRequestFwCheck() { fwCheckReq = true; }
+void netRequestFwInstall() { fwInstallReq = true; }
+static long verNum(String v) {             // "v0.3.10" -> 3010 (major, minor, patch)
+  v.trim(); if (v.startsWith("v")) v = v.substring(1);
+  int d1 = v.indexOf('.'), d2 = d1 > 0 ? v.indexOf('.', d1 + 1) : -1;
+  long a = v.toInt(), b = d1 > 0 ? v.substring(d1 + 1).toInt() : 0, c = d2 > 0 ? v.substring(d2 + 1).toInt() : 0;
+  return a * 1000000L + b * 1000L + c;
+}
+bool fwNewer() { return live.fwLatest.length() && verNum(live.fwLatest) > verNum(FW_VERSION) && live.fwUrl.length(); }
+static void fwCheck() {
+  String b;
+  if (!httpGet("https://api.github.com/repos/" UPDATE_REPO "/releases/latest", b, "", nullptr, "", "application/vnd.github+json")) {
+    lock(); live.fwErr = lastHttp == 404 ? "nenhuma versão publicada ainda" : "não consegui consultar o GitHub"; unlock(); return;
+  }
+  JsonDocument filter;
+  filter["tag_name"] = true;
+  filter["assets"][0]["name"] = true;
+  filter["assets"][0]["browser_download_url"] = true;
+  JsonDocument d;
+  if (deserializeJson(d, b, DeserializationOption::Filter(filter))) { lock(); live.fwErr = "resposta do GitHub inválida"; unlock(); return; }
+  String tag = d["tag_name"] | "", url, sums;
+  for (JsonObject a : d["assets"].as<JsonArray>()) {
+    String n = a["name"] | "";
+    if (n.endsWith("-ota.bin")) url = a["browser_download_url"] | "";
+    else if (n == "SHA256SUMS.txt") sums = a["browser_download_url"] | "";
+  }
+  String sha;
+  if (url.length() && sums.length() && httpGet(sums, b, "", nullptr, "", "text/plain")) {
+    String name = url.substring(url.lastIndexOf('/') + 1);
+    int i = b.indexOf("  " + name);                             // "<sha256>  <file>"
+    if (i >= 64) sha = b.substring(i - 64, i);
+  }
+  bool wasNewer = fwNewer();
+  time_t now; time(&now);
+  lock();
+  live.fwLatest = tag.startsWith("v") ? tag.substring(1) : tag; live.fwUrl = sha.length() == 64 ? url : ""; live.fwSha = sha; live.fwAt = now;
+  live.fwErr = url.length() && sha.length() != 64 ? "release sem SHA256SUMS: não instalo" : "";
+  unlock();
+  logf("[net] última versão no GitHub: %s (esta: %s)", tag.c_str(), FW_VERSION);
+  if (fwNewer() && !wasNewer) notifyAdd(N_AGENTE, "Versão " + live.fwLatest + " disponível", "Config › toque na versão para instalar");
+}
+static void fwInstall() {
+  if (!fwNewer()) return;
+  String url = live.fwUrl, want = live.fwSha; want.toLowerCase();
+  auto fail = [](const String& m) { logf("[net] atualização falhou: %s", m.c_str()); lock(); live.fwErr = m; live.fwProg = -1; unlock(); uiRequestRedraw(); };
+  lock(); live.fwProg = 0; live.fwErr = ""; unlock(); uiRequestRedraw();
+  HTTPClient http; WiFiClientSecure sec;
+  sec.setCACertBundle(CA_BUNDLE);
+  if (!http.begin(sec, url)) { fail("endereço inválido"); return; }
+  http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+  http.setTimeout(15000);
+  int code = http.GET(), len = http.getSize();
+  if (code != 200 || len <= 0) { http.end(); fail("download recusado (" + String(code) + ")"); return; }
+  if (!Update.begin(len)) { http.end(); fail(String("sem espaço: ") + Update.errorString()); return; }
+  mbedtls_sha256_context ctx; mbedtls_sha256_init(&ctx); mbedtls_sha256_starts(&ctx, 0);
+  WiFiClient* st = http.getStreamPtr();
+  static uint8_t buf[2048];
+  int got = 0, lastPct = -1; uint32_t t0 = millis(), lastByte = millis();
+  while (got < len && millis() - t0 < 180000 && millis() - lastByte < 20000) {
+    int av = st->available();
+    if (av <= 0) { vTaskDelay(pdMS_TO_TICKS(5)); continue; }
+    int n = st->readBytes(buf, min(av, (int)sizeof(buf)));
+    if (n <= 0) continue;
+    mbedtls_sha256_update(&ctx, buf, n);
+    if (Update.write(buf, n) != (size_t)n) break;
+    got += n; lastByte = millis(); netHeartbeat = millis();
+    int pct = (long)got * 100 / len;
+    if (pct != lastPct) { lastPct = pct; lock(); live.fwProg = pct; unlock(); if (pct % 5 == 0) uiRequestRedraw(); }
+  }
+  http.end();
+  uint8_t h[32]; mbedtls_sha256_finish(&ctx, h); mbedtls_sha256_free(&ctx);
+  char hex[65]; for (int i = 0; i < 32; i++) sprintf(hex + i * 2, "%02x", h[i]);
+  if (got != len) { Update.abort(); fail("download interrompido"); return; }
+  if (want != hex) { Update.abort(); fail("arquivo não confere com o SHA-256 da release"); return; }
+  if (!Update.end(true)) { fail(String("não gravou: ") + Update.errorString()); return; }
+  logf("[net] versão %s instalada, reiniciando", live.fwLatest.c_str());
+  lock(); live.fwProg = 100; unlock(); uiRequestRedraw();
+  delay(1500);
+  ESP.restart();
+}
 
 // ---------- demo mode: sample data for screenshots (README, docs), nothing personal ----------
 // Turned on over the LAN at /demo?on=1; the fetches stop, and /shot.bmp?tela=<screen> works.
@@ -906,11 +1002,41 @@ static void demoFill() {
   cfg.nome = "Ana";   // only in RAM: the restart at the end brings the real one back
 }
 
+
+// ---------- clock fallback ----------
+// HTTPS needs the right date to check certificates. If NTP does not answer (some networks block
+// it), take the date from the "Date" header of a plain HTTP page. Only used while the clock is unset.
+static uint32_t wifiUpAt = 0, lastDateTry = 0;
+static bool clockSet() { time_t t; time(&t); return t > 1700000000; }
+static void clockFromHttp() {
+  HTTPClient http; WiFiClient c;
+  const char* keys[] = {"Date"};
+  if (!http.begin(c, "http://detectportal.firefox.com/success.txt")) return;
+  http.collectHeaders(keys, 1);
+  http.setTimeout(6000);
+  int code = http.GET();
+  String d = http.header("Date");
+  http.end();
+  // "Thu, 26 Nov 2026 07:10:00 GMT"
+  static const char* M = "JanFebMarAprMayJunJulAugSepOctNovDec";
+  int day, year, hh, mm, ss; char mon[4];
+  if (code <= 0 || sscanf(d.c_str(), "%*3s, %d %3s %d %d:%d:%d", &day, mon, &year, &hh, &mm, &ss) != 6) {
+    logf("[net] relógio: sem NTP e sem data por HTTP (%d)", code); return;
+  }
+  const char* f = strstr(M, mon); if (!f) return;
+  struct tm t = {}; t.tm_year = year - 1900; t.tm_mon = (f - M) / 3; t.tm_mday = day; t.tm_hour = hh; t.tm_min = mm; t.tm_sec = ss;
+  setenv("TZ", "UTC0", 1); tzset();
+  time_t epoch = mktime(&t);
+  setenv("TZ", "<-03>3", 1); tzset();
+  struct timeval tv = {epoch, 0};
+  settimeofday(&tv, nullptr);
+  logf("[net] relógio acertado pela data HTTP (NTP não respondeu)");
+}
 // ---------- network task ----------
 volatile uint32_t netHeartbeat = 0;   // read by the UI task: software watchdog for this task
 static void netHeartbeatTouch() { netHeartbeat = millis(); }
 static void netTask(void*) {
-  uint32_t lastBtc = 0, lastWx = 0, lastSoc = 0, lastHa = 0, lastPh = 0, lastPl = 0, lastRd = 0, lastIc = 0, lastNetCheck = 0, wifiStart = millis();
+  uint32_t lastBtc = 0, lastWx = 0, lastSoc = 0, lastHa = 0, lastPh = 0, lastPl = 0, lastRd = 0, lastIc = 0, lastFw = 0, lastNetCheck = 0, wifiStart = millis();
   bool hermesStarted = false;
   for (;;) {
     netHeartbeat = millis();
@@ -938,7 +1064,10 @@ static void netTask(void*) {
       wifiUp = true; everUp = true;
       ipStr = WiFi.localIP().toString();
       logf("[net] wifi up %s rssi %d\n", ipStr.c_str(), WiFi.RSSI());
-      configTzTime("<-03>3", "pool.ntp.org", "time.google.com");
+      // the router first (many answer NTP and some networks block outside NTP), then public servers
+      static String gw; gw = WiFi.gatewayIP().toString();
+      configTzTime("<-03>3", gw.c_str(), "pool.ntp.org", "time.cloudflare.com");
+      wifiUpAt = millis();
       lastBtc = lastWx = lastSoc = lastHa = lastPh = lastPl = 0;
       if (apMode) { dns.stop(); WiFi.softAPdisconnect(true); WiFi.mode(WIFI_STA); apMode = false; }
       ledSet(0, 0, 0);
@@ -958,13 +1087,15 @@ static void netTask(void*) {
       setOnline(wifiUp && reachInternet());
     }
     if (demoMode && millis() - demoSince > 15UL * 60 * 1000) ESP.restart();
+    if (wifiUp && !clockSet() && millis() - wifiUpAt > 12000 && millis() - lastDateTry > 30000) { lastDateTry = millis(); clockFromHttp(); }
     if (wifiUp && (demoMode || sshState == 1 || sshState == 2)) { if (hermesStarted) hermesLoop(); }   // demo or terminal: no HTTPS fetches
-    else if (wifiUp) {
+    else if (wifiUp && clockSet()) {
       uint32_t now = millis();
       if (refreshReq) { refreshReq = false; lastBtc = lastWx = lastSoc = lastHa = lastPh = lastPl = lastIc = 0; }
       if (placaReq) { placaReq = false; if (now - lastPl > 60000UL) lastPl = 0; }
       // one fetch per loop pass, so the idle task (and its watchdog) gets CPU between TLS handshakes
-      if (haToggleReq >= 0) { int i = haToggleReq; haToggleReq = -1; haToggle(i); uiRequestRedraw(); }
+      if (fwInstallReq) { fwInstallReq = false; fwInstall(); }
+      else if (haToggleReq >= 0) { int i = haToggleReq; haToggleReq = -1; haToggle(i); uiRequestRedraw(); }
       else if (MOD_ON(M_BTC) && (!lastBtc || now - lastBtc > (uint32_t)cfg.btcEvery * 1000)) { fetchBtc(); lastBtc = millis(); uiRequestRedraw(); }
       else if (((MOD_ON(M_AGENDA) && !cfg.icalUrl.length()) || MOD_ON(M_NEWS) || MOD_ON(M_MAQ)) && cfg.feedUrl.length() && (!lastPl || now - lastPl > 5UL * 60 * 1000)) { fetchPlaca(); lastPl = millis(); uiRequestRedraw(); }
       else if (MOD_ON(M_AGENDA) && cfg.icalUrl.length() && timeIsSet() && (!lastIc || now - lastIc > 15UL * 60 * 1000)) { fetchIcal(); lastIc = millis(); uiRequestRedraw(); }
@@ -974,6 +1105,7 @@ static void netTask(void*) {
       else if (curScreen == S_CASA && (!lastHa || now - lastHa > 15000)) { fetchHa(); lastHa = millis(); uiRequestRedraw(); }
       else if (radioReq && (!lastRd || now - lastRd > 30UL * 60 * 1000)) { radioReq = false; fetchPropagation(); fetchIssPass(); lastRd = millis(); uiRequestRedraw(); }
       else if (radioReq) radioReq = false;
+      else if (fwCheckReq || (now > 120000 && (!lastFw || now - lastFw > 12UL * 3600 * 1000))) { fwCheckReq = false; fwCheck(); lastFw = millis(); uiRequestRedraw(); }
       if (!hermesStarted && MOD_ON(M_AGENTE) && cfg.hermesUrl.length()) { hermesBegin(); hermesStarted = true; }
       if (hermesStarted) hermesLoop();
     }

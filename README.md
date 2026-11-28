@@ -27,9 +27,11 @@ Firmware para a **ESP32-2432S028 ("Cheap Yellow Display", CYD)** que funciona de
 | `docs/deck-protocol.md` | formato da linha `deck {json}` |
 | `docs/feed.md` | JSON do feed (agenda, manchetes, máquinas, uso de IA) e dos seguidores |
 | `docs/hardware.md` | lista de peças do cyberdeck e observações |
+| `docs/hermes.md` | como parear a tela Agente com o Hermes |
+| `docs/controle-ir.md` | Controle IR: o que falta e o hardware |
 | `n8n/` | workflow do feed (máquinas, uso de IA) para importar no n8n |
 | `site/` | página de gravação pelo navegador (publicada no GitHub Pages) |
-| `tests/` | testes do leitor de iCal e do terminal; rodam no computador e no GitHub Actions |
+| `tests/` | testes dos leitores de iCal e RSS e do terminal; rodam no computador e no GitHub Actions |
 
 ## Gravar e atualizar
 **Primeira vez, pelo navegador:** abra **https://j0n777.github.io/cybercydeck/** no Chrome ou no Edge de um computador,
@@ -55,6 +57,22 @@ enquanto baixa, e guarda só os próximos compromissos (eventos repetidos, cance
 Serve qualquer link `.ics` (Outlook, Nextcloud, Proton...). Esse endereço dá acesso à agenda: não compartilhe; se vazar,
 use **Redefinir** no Google. Sem link, a agenda vem do feed.
 
+## Manchetes (RSS)
+No portal, em **Notícias**, cole até 3 links RSS ou Atom, um por linha (ex.: `https://g1.globo.com/rss/g1/tecnologia/`).
+A placa lê cada link a cada 15 min, para de baixar assim que tem os títulos e alterna as fontes na tela.
+Com links RSS, as manchetes do feed são ignoradas; sem eles, valem as do feed.
+
+## Pi-hole
+Endereço e senha (ou senha de app) do Pi-hole v6 no portal. A tela mostra o % bloqueado, clientes, tamanho da lista e
+os 5 domínios mais bloqueados do dia (`/api/stats/top_domains?blocked=true`). Só na rede local.
+
+## Clima
+[Open-Meteo](https://open-meteo.com/), sem chave: agora (temperatura, sensação, umidade, vento com direção, chuva, UV,
+nascer e pôr do sol), as próximas 6 horas com chance de chuva e os próximos 3 dias.
+
+## Agente (Hermes)
+Veja [`docs/hermes.md`](docs/hermes.md).
+
 ## Máquinas e uso de IA (n8n)
 Veja [`n8n/README.md`](n8n/README.md): um workflow pronto para importar, mais o `host/sinal.py` que cada máquina roda.
 
@@ -73,7 +91,7 @@ quando pedir: é um terminal de verdade (53×18, cores, nano, top, less, vim), c
 Não mostram senhas, tokens nem endereços com parâmetros.
 
 ## Jogos
-Snake e **Tanques**: artilharia por turno contra a placa. Toque no céu para mirar (direção e força) ou ajuste
+**Tanques**: artilharia por turno contra a placa. Toque no céu para mirar (direção e força) ou ajuste
 ângulo e força nos botões; o vento muda a cada rodada e a mira da placa melhora com o tempo.
 
 ## Aprovações do agente e avisos
@@ -104,7 +122,7 @@ journalctl -u deckd -f
 Teste sem a placa: `python3 host/deckd.py --stdout --once`.
 
 ## Comandos pela USB (115200)
-`status`, `cfg`, `set <chave> <valor>` (nome, feed, token, ical, n8n, phurl, phpass, city, mods, night, beep, theme, anim, apagao),
+`status`, `cfg`, `set <chave> <valor>` (nome, feed, token, ical, rss (links separados por `|`), n8n, phurl, phpass, city, mods, night, beep, theme, anim, apagao),
 `nav <tela>`, `shot`, `tap x y`, `led <cor>`, `beep`, `restart`, `factory`, `deck {json}` (usado pelo deckd),
 e para testes `hermes {json}` (injeta uma mensagem do Hermes, ex.: um `prompt`) e `notify <texto>`.
 

@@ -118,10 +118,10 @@ static void fetchBtc() {
   String b;
   JsonDocument d;
   bool any = false;
-  if (httpGet("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,solana&vs_currencies=usd&include_24hr_change=true", b) &&
+  if (httpGet("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,solana&vs_currencies=usd,brl&include_24hr_change=true", b) &&
       !deserializeJson(d, b)) {
     lock();
-    live.btc = d["bitcoin"]["usd"] | 0.0f; live.btcChg = d["bitcoin"]["usd_24h_change"] | 0.0f;
+    live.btc = d["bitcoin"]["usd"] | 0.0f; live.btcChg = d["bitcoin"]["usd_24h_change"] | 0.0f; live.btcBrl = d["bitcoin"]["brl"] | 0.0f;
     live.eth = d["ethereum"]["usd"] | 0.0f; live.ethChg = d["ethereum"]["usd_24h_change"] | 0.0f;
     live.sol = d["solana"]["usd"] | 0.0f; live.solChg = d["solana"]["usd_24h_change"] | 0.0f;
     live.btcOk = live.btc > 0;
@@ -188,11 +188,13 @@ static void fetchWeather() {
   }
   if (isnan(lat)) return;
   lock(); live.wxByIp = byIp; live.wxPlace = byIp ? ipCity : cfg.city; unlock();
-  char url[360];
+  char url[560];
   snprintf(url, sizeof(url),
            "https://api.open-meteo.com/v1/forecast?latitude=%.4f&longitude=%.4f"
-           "&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m"
-           "&daily=temperature_2m_max,temperature_2m_min,weather_code&timezone=America%%2FSao_Paulo&forecast_days=4",
+           "&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m,wind_direction_10m,precipitation"
+           "&hourly=temperature_2m,precipitation_probability,weather_code&forecast_hours=7"
+           "&daily=temperature_2m_max,temperature_2m_min,weather_code,sunrise,sunset,precipitation_probability_max,uv_index_max"
+           "&timezone=America%%2FSao_Paulo&forecast_days=4",
            lat, lon);
   String b;
   JsonDocument d;
@@ -202,6 +204,23 @@ static void fetchWeather() {
   live.wxHum = d["current"]["relative_humidity_2m"] | 0;
   live.wxWind = d["current"]["wind_speed_10m"] | 0.0f;
   live.wxCode = d["current"]["weather_code"] | 0;
+  live.wxFeels = d["current"]["apparent_temperature"] | live.wxTemp;
+  live.wxDir = d["current"]["wind_direction_10m"] | 0;
+  live.wxRain = d["current"]["precipitation"] | 0.0f;
+  live.wxRainProb = d["daily"]["precipitation_probability_max"][0] | -1;
+  live.wxUv = d["daily"]["uv_index_max"][0] | -1.0f;
+  { String sr = d["daily"]["sunrise"][0] | "", ss = d["daily"]["sunset"][0] | "";      // "2026-11-28T05:41"
+    live.wxSunrise = sr.length() >= 16 ? sr.substring(11, 16) : ""; live.wxSunset = ss.length() >= 16 ? ss.substring(11, 16) : ""; }
+  live.hN = 0;
+  for (int i = 1; i < 7 && live.hN < 6; i++) {          // hour 0 is the current one
+    const char* t = d["hourly"]["time"][i] | "";
+    if (strlen(t) < 13) break;
+    live.hHour[live.hN] = atoi(t + 11);
+    live.hTemp[live.hN] = d["hourly"]["temperature_2m"][i] | 0.0f;
+    live.hProb[live.hN] = d["hourly"]["precipitation_probability"][i] | 0;
+    live.hCode[live.hN] = d["hourly"]["weather_code"][i] | 0;
+    live.hN++;
+  }
   for (int i = 0; i < 4; i++) {
     live.dMax[i] = d["daily"]["temperature_2m_max"][i] | 0.0f;
     live.dMin[i] = d["daily"]["temperature_2m_min"][i] | 0.0f;
@@ -321,8 +340,8 @@ static void fetchPlaca() {
     live.agDia[live.agN] = a["dia_todo"] | false;
     live.agN++;
   }
-  live.nwN = 0;
-  for (JsonObject n : p["manchetes"].as<JsonArray>()) {
+  if (!cfg.rssUrls.length()) live.nwN = 0;   // with RSS links the headlines come from there
+  if (!cfg.rssUrls.length()) for (JsonObject n : p["manchetes"].as<JsonArray>()) {
     if (live.nwN >= 5) break;
     live.nwT[live.nwN] = String((const char*)(n["t"] | ""));
     live.nwF[live.nwN] = String((const char*)(n["fonte"] | ""));
@@ -408,6 +427,27 @@ static void fetchPihole() {
     time_t now; time(&now); live.phAt = now;
     unlock();
     logf("[net] pihole %ld queries, %ld blocked (%.1f%%)\n", live.phTotal, live.phBlocked, live.phPct);
+    // the most blocked domains today (Pi-hole v6: /api/stats/top_domains?blocked=true)
+    HTTPClient h2; WiFiClient c2;
+    if (h2.begin(c2, phBase() + "/api/stats/top_domains?blocked=true&count=5")) {
+      h2.setTimeout(6000);
+      if (phSid.length()) h2.addHeader("X-FTL-SID", phSid);
+      int code2 = h2.GET();
+      String r2 = code2 == 200 ? h2.getString() : "";
+      h2.end();
+      JsonDocument t;
+      if (code2 == 200 && !deserializeJson(t, r2)) {
+        lock();
+        live.phTopN = 0;
+        for (JsonObject o : t["domains"].as<JsonArray>()) {
+          if (live.phTopN >= 5) break;
+          live.phTop[live.phTopN] = String((const char*)(o["domain"] | ""));
+          live.phTopC[live.phTopN] = o["count"] | 0L;
+          live.phTopN++;
+        }
+        unlock();
+      }
+    }
     return;
   }
 }
@@ -557,6 +597,10 @@ static void handleRoot() {
   h += F("<h2>AGENDA <small>(link iCal: no Google Agenda, Configurações do calendário › Integrar agenda › Endereço secreto no formato iCal)</small></h2>");
   h += secretField("ical", "Link .ics da agenda (substitui a agenda do feed)", cfg.icalUrl.length() > 0, "https://calendar.google.com/calendar/ical/.../basic.ics");
   if (cfg.icalUrl.length()) h += F("<label class=chk><input type=checkbox name=icalclr> Remover o link da agenda</label>");
+  h += F("<h2>NOTÍCIAS <small>(até 3 links RSS ou Atom, um por linha; substituem as manchetes do feed)</small></h2>"
+         "<label for=rss>Links RSS</label><textarea id=rss name=rss rows=3 style='width:100%;box-sizing:border-box;font:14px ui-monospace,monospace' "
+         "placeholder='https://g1.globo.com/rss/g1/tecnologia/&#10;https://www.livecoins.com.br/feed/'>");
+  h += esc(cfg.rssUrls) + "</textarea>";
   h += F("<h2>SEGUIDORES</h2>");
   h += field("n8n", "URL dos seguidores (JSON: total, instagram, youtube…)", cfg.n8nUrl, "url", "https://seu-servidor/seguidores.json");
   h += F("<h2>PI-HOLE</h2>");
@@ -607,6 +651,7 @@ static void handleSave() {
   if (server.hasArg("fwinst")) netRequestFwInstall();
   take("nome", cfg.nome); take("feed", cfg.feedUrl); takeSecret("feedtok", cfg.feedToken);
   takeSecret("ical", cfg.icalUrl); if (server.hasArg("icalclr")) cfg.icalUrl = "";
+  if (server.hasArg("rss")) { String r = server.arg("rss"); r.trim(); if (r != cfg.rssUrls) { cfg.rssUrls = r; netRequestRefresh(); } }
   if (server.hasArg("opts_form")) { cfg.nightDim = server.hasArg("night"); cfg.alertBeep = server.hasArg("abeep"); }
   if (server.hasArg("mods_form")) {
     uint16_t m = 0;
@@ -880,6 +925,64 @@ static void fetchIcal() {
   logf("[net] ical %u KB, %ld eventos, %d próximos\n", (unsigned)(sink.total / 1024), evs, n);
 }
 
+// ---------- headlines from RSS / Atom links ----------
+#include "rss.h"
+class RssSink : public Stream {
+ public:
+  int available() override { return 0; }
+  int read() override { return -1; }
+  int peek() override { return -1; }
+  void flush() override {}
+  RssReader* r; size_t total = 0; uint32_t t0 = 0;
+  size_t write(uint8_t c) override { return write(&c, 1); }
+  size_t write(const uint8_t* b, size_t n) override {
+    if (r->done() || total > 2UL * 1024 * 1024 || millis() - t0 > 25000) return 0;   // enough: stop the download
+    r->feed((const char*)b, n); total += n;
+    if ((total & 0xFFFF) < n) netHeartbeatTouch();
+    return n;
+  }
+};
+static void fetchRss() {
+  String urls[3]; int k = 0;
+  String all = cfg.rssUrls; all.replace("\r", "\n");
+  int from = 0;
+  while (k < 3 && from < (int)all.length()) {
+    int nl = all.indexOf('\n', from); if (nl < 0) nl = all.length();
+    String u = all.substring(from, nl); u.trim(); from = nl + 1;
+    if (u.startsWith("http")) urls[k++] = u;
+  }
+  if (!k) return;
+  int each = (5 + k - 1) / k;
+  String t[3][5], src[3]; int got[3] = {0, 0, 0}; String err;
+  RssReader* r = new RssReader;
+  for (int i = 0; i < k; i++) {
+    r->begin(each);
+    HTTPClient http; WiFiClientSecure sec; WiFiClient plain;
+    bool ok = urls[i].startsWith("https") ? (sec.setCACertBundle(CA_BUNDLE), http.begin(sec, urls[i])) : http.begin(plain, urls[i]);
+    if (!ok) { err = "link RSS inválido"; continue; }
+    http.setTimeout(10000);
+    http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+    http.setUserAgent("Mozilla/5.0 (CyberCYDeck; RSS)");
+    int code = http.GET();
+    RssSink sink; sink.r = r; sink.t0 = millis();
+    if (code == 200) http.writeToStream(&sink);
+    http.end();
+    logf("[net] rss %d: %d, %u B, %d títulos\n", i + 1, code, (unsigned)sink.total, r->n);
+    if (code != 200 || !r->n) { err = code == 200 ? "RSS sem títulos (é mesmo um feed?)" : "RSS respondeu " + String(code); continue; }
+    for (int j = 0; j < r->n; j++) t[i][j] = r->title[j];
+    src[i] = r->source; got[i] = r->n;
+    delay(1);
+  }
+  delete r;
+  lock();
+  int n = 0;
+  for (int j = 0; j < 5 && n < 5; j++)          // one from each link in turn
+    for (int i = 0; i < k && n < 5; i++)
+      if (j < got[i]) { live.nwT[n] = t[i][j]; live.nwF[n] = src[i]; n++; }
+  if (n) { live.nwN = n; live.rssOk = true; live.rssAt = time(nullptr); }
+  live.rssErr = n ? "" : err;
+  unlock();
+}
 
 // ---------- updates from the GitHub releases ----------
 // The board asks the GitHub API for the latest release of UPDATE_REPO, downloads its
@@ -977,13 +1080,18 @@ static void demoFill() {
   time_t now; time(&now);
   lock();
   live.btcOk = true; live.btc = 97450; live.btcChg = 2.31f; live.eth = 3612; live.ethChg = -0.84f; live.sol = 238; live.solChg = 4.12f;
-  live.feeSlow = 3; live.feeStd = 5; live.feeFast = 8; live.fng = 64; live.fngLabel = "Greed"; live.btcAt = now;
+  live.feeSlow = 3; live.feeStd = 5; live.feeFast = 8; live.fng = 64; live.fngLabel = "Greed"; live.btcAt = now; live.btcBrl = 521300;
   live.wxOk = true; live.wxTemp = 24; live.wxHum = 61; live.wxWind = 9; live.wxCode = 2; live.wxPlace = "São Paulo"; live.wxByIp = false; live.wxAt = now;
+  live.wxFeels = 25; live.wxDir = 135; live.wxRain = 0; live.wxRainProb = 40; live.wxUv = 7; live.wxSunrise = "05:21"; live.wxSunset = "18:49";
+  { struct tm t; localtime_r(&now, &t); const float ht[6] = {24, 25, 25, 23, 21, 20}; const int hp[6] = {5, 10, 40, 60, 30, 10}, hc[6] = {2, 2, 80, 61, 3, 3};
+    live.hN = 6; for (int i = 0; i < 6; i++) { live.hHour[i] = (t.tm_hour + 1 + i) % 24; live.hTemp[i] = ht[i]; live.hProb[i] = hp[i]; live.hCode[i] = hc[i]; } }
   const float mx[4] = {27, 29, 25, 23}, mn[4] = {18, 19, 17, 16}; const int cd[4] = {2, 1, 61, 3};
   for (int i = 0; i < 4; i++) { live.dMax[i] = mx[i]; live.dMin[i] = mn[i]; live.dCode[i] = cd[i]; struct tm t; time_t d = now + 86400L * (i + 1); localtime_r(&d, &t); const char* W[7] = {"dom.", "seg.", "ter.", "qua.", "qui.", "sex.", "sáb."}; live.dDay[i] = W[t.tm_wday]; }
   live.socOk = true; live.socYt = 48200; live.socIg = 312500; live.socTt = 157800; live.socX = 22400; live.socTg = 9100; live.socTh = 41000; live.socFb = 18600;
   live.socTotal = 48200 + 312500 + 157800 + 22400 + 9100 + 41000 + 18600; live.socAt = now;
   live.phOk = true; live.phTotal = 48213; live.phBlocked = 9870; live.phDomains = 312450; live.phPct = 20.5f; live.phClients = 14; live.phAt = now; live.phErr = "";
+  { const char* td[5] = {"telemetry.example-tv.com", "ads.tracker-demo.net", "metrics.app-exemplo.io", "pixel.redesocial.test", "analytics.loja.test"}; const long tc[5] = {2140, 1388, 912, 455, 301};
+    live.phTopN = 5; for (int i = 0; i < 5; i++) { live.phTop[i] = td[i]; live.phTopC[i] = tc[i]; } }
   live.plOk = true; live.plAt = now; live.plErr = ""; live.saude = "ok";
   live.mqN = 3;
   const char* nm[3] = {"Servidor", "Raspberry Pi", "NAS"}; const int cpu[3] = {23, 8, 4}, ram[3] = {61, 37, 52}, tp[3] = {54, 47, 41}, dk[3] = {68, 41, 77};
@@ -1036,7 +1144,7 @@ static void clockFromHttp() {
 volatile uint32_t netHeartbeat = 0;   // read by the UI task: software watchdog for this task
 static void netHeartbeatTouch() { netHeartbeat = millis(); }
 static void netTask(void*) {
-  uint32_t lastBtc = 0, lastWx = 0, lastSoc = 0, lastHa = 0, lastPh = 0, lastPl = 0, lastRd = 0, lastIc = 0, lastFw = 0, lastNetCheck = 0, wifiStart = millis();
+  uint32_t lastBtc = 0, lastWx = 0, lastSoc = 0, lastHa = 0, lastPh = 0, lastPl = 0, lastRd = 0, lastIc = 0, lastRss = 0, lastFw = 0, lastNetCheck = 0, wifiStart = millis();
   bool hermesStarted = false;
   for (;;) {
     netHeartbeat = millis();
@@ -1091,13 +1199,14 @@ static void netTask(void*) {
     if (wifiUp && (demoMode || sshState == 1 || sshState == 2)) { if (hermesStarted) hermesLoop(); }   // demo or terminal: no HTTPS fetches
     else if (wifiUp && clockSet()) {
       uint32_t now = millis();
-      if (refreshReq) { refreshReq = false; lastBtc = lastWx = lastSoc = lastHa = lastPh = lastPl = lastIc = 0; }
+      if (refreshReq) { refreshReq = false; lastBtc = lastWx = lastSoc = lastHa = lastPh = lastPl = lastIc = lastRss = 0; }
       if (placaReq) { placaReq = false; if (now - lastPl > 60000UL) lastPl = 0; }
       // one fetch per loop pass, so the idle task (and its watchdog) gets CPU between TLS handshakes
       if (fwInstallReq) { fwInstallReq = false; fwInstall(); }
       else if (haToggleReq >= 0) { int i = haToggleReq; haToggleReq = -1; haToggle(i); uiRequestRedraw(); }
       else if (MOD_ON(M_BTC) && (!lastBtc || now - lastBtc > (uint32_t)cfg.btcEvery * 1000)) { fetchBtc(); lastBtc = millis(); uiRequestRedraw(); }
-      else if (((MOD_ON(M_AGENDA) && !cfg.icalUrl.length()) || MOD_ON(M_NEWS) || MOD_ON(M_MAQ)) && cfg.feedUrl.length() && (!lastPl || now - lastPl > 5UL * 60 * 1000)) { fetchPlaca(); lastPl = millis(); uiRequestRedraw(); }
+      else if (((MOD_ON(M_AGENDA) && !cfg.icalUrl.length()) || (MOD_ON(M_NEWS) && !cfg.rssUrls.length()) || MOD_ON(M_MAQ)) && cfg.feedUrl.length() && (!lastPl || now - lastPl > 5UL * 60 * 1000)) { fetchPlaca(); lastPl = millis(); uiRequestRedraw(); }
+      else if (MOD_ON(M_NEWS) && cfg.rssUrls.length() && (!lastRss || now - lastRss > 15UL * 60 * 1000)) { fetchRss(); lastRss = millis(); uiRequestRedraw(); }
       else if (MOD_ON(M_AGENDA) && cfg.icalUrl.length() && timeIsSet() && (!lastIc || now - lastIc > 15UL * 60 * 1000)) { fetchIcal(); lastIc = millis(); uiRequestRedraw(); }
       else if (MOD_ON(M_CLIMA) && (!lastWx || now - lastWx > 30UL * 60 * 1000)) { fetchWeather(); lastWx = millis(); uiRequestRedraw(); }
       else if (MOD_ON(M_REDES) && (!lastSoc || now - lastSoc > 15UL * 60 * 1000)) { fetchSocial(); lastSoc = millis(); uiRequestRedraw(); }

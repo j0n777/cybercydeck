@@ -33,9 +33,10 @@ jobs:
         with:
           path: ~/.platformio
           key: pio-${{ hashFiles('platformio.ini') }}
-      - name: Tests (iCal reader, terminal)
+      - name: Tests (iCal reader, RSS reader, terminal)
         run: |
           g++ -Wall -o /tmp/ical-test tests/ical/teste.cpp src/ical.cpp && /tmp/ical-test tests/ical/exemplo.ics
+          g++ -Wall -o /tmp/rss-test tests/rss/teste.cpp src/rss.cpp && /tmp/rss-test
           g++ -Wall -o /tmp/vt-test tests/vt/teste.cpp src/vt.cpp && /tmp/vt-test
       - name: Build
         run: |

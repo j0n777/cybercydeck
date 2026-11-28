@@ -16,8 +16,8 @@ Firmware para a **ESP32-2432S028 ("Cheap Yellow Display", CYD)** que funciona de
  └────────────────────────────────────┘
 ```
 
-> **Estado:** a 0.2.0 roda e foi testada numa CYD real. A 0.3.0 (aprovações do agente, avisos, rádio, modo apagão)
-> compila e está em teste na placa.
+> **Estado:** painel, agenda iCal e Pi-hole testados numa CYD real; manchetes RSS e terminal SSH em teste na 0.4.0.
+> O lado do deck (`deckd` no Orange Pi Zero 2W) ainda não foi testado em hardware real.
 
 ## Estrutura
 | Pasta | O quê |

@@ -3,7 +3,7 @@
 #include "board.h"
 #include "vt.h"
 
-#define FW_VERSION "0.3.0"
+#define FW_VERSION "0.4.0"
 #define UPDATE_REPO "j0n777/cybercydeck"   // GitHub releases the board updates from (change it in a fork)
 #define PROJECT_NAME "CyberCYDeck"
 #define AP_SSID "CyberCYDeck"

@@ -585,21 +585,27 @@ static void drawBtc() {
   text(268, 38, "Medo & Ganância", F_BM11, C_MUTED, C_CARD, 1);
   if (live.fng >= 0) {
     // gauge bar
+    // fear = orange (bad), neutral = grey, greed = green
+    uint16_t fc = live.fng < 45 ? C_WARN : live.fng <= 55 ? C_MUTED : C_GREEN;
     rrect(234, 82, 68, 6, 3, C_SOFT, C_SOFT);
-    rrect(234, 82, max(6, 68 * live.fng / 100), 6, 3, C_OR, C_OR);
-    text(268, 52, String(live.fng), F_CB24, C_INK, C_CARD, 1);
-    text(268, 94, live.fngLabel, F_BS13, C_ORT, C_CARD, 1);
+    rrect(234, 82, max(6, 68 * live.fng / 100), 6, 3, fc, fc);
+    text(268, 52, String(live.fng), F_CB24, fc, C_CARD, 1);
+    text(268, 94, live.fngLabel, fit(live.fngLabel, 84, F_BS13, F_BM11), fc, C_CARD, 1);
   } else text(268, 64, "—", F_CB24, C_MUTED, C_CARD, 1);
 
-  card(8, 122, 304, 50);
-  text(16, 127, "TAXAS ON-CHAIN · sat/vB", F_CS12, C_MUTED, C_CARD);
-  const char* lab[3] = {"Lenta", "Normal", "Rápida"};
+  // fees as money: a typical payment (1 input, 2 outputs, SegWit) is ~141 vB
+  card(8, 122, 304, 52);
+  text(16, 126, "TAXA DE UM ENVIO ON-CHAIN", F_CS12, C_MUTED, C_CARD);
+  const char* lab[3] = {"~1 h", "~30 min", "próximo bloco"};
   int vals[3] = {live.feeSlow, live.feeStd, live.feeFast};
   for (int i = 0; i < 3; i++) {
     int x = 16 + i * 98;
-    rrect(x, 145, 90, 20, 4, i == 2 ? C_PEACH : C_BG, i == 2 ? C_PEACH : C_BG);
-    text(x + 6, 148, lab[i], F_BM11, C_INK, i == 2 ? C_PEACH : C_BG);
-    text(x + 84, 147, live.btcOk ? String(vals[i]) : "—", F_BS13, C_INK, i == 2 ? C_PEACH : C_BG, 2);
+    uint16_t bg = i == 2 ? C_PEACH : C_BG;
+    rrect(x, 141, 90, 29, 4, bg, bg);
+    float brl = vals[i] * 141.0f * live.btcBrl / 1e8f;
+    String money = live.btcBrl > 0 && vals[i] > 0 ? "R$ " + fmtNum(brl, brl < 10 ? 2 : 0) : String("—");
+    text(x + 6, 143, money, F_BS13, C_INK, bg);
+    text(x + 6, 158, String(lab[i]) + " · " + vals[i] + " sat/vB", F_BM11, C_MUTED, bg);
   }
 
   auto mini = [&](int x, const char* sym, float p, float c) {
@@ -610,31 +616,57 @@ static void drawBtc() {
   };
   mini(8, "ETH", live.eth, live.ethChg);
   mini(163, "SOL", live.sol, live.solChg);
-  String foot = live.btcOk ? ("US$ 1 = " + fmtNum(1e8 / live.btc, 0) + " sats · CoinGecko · " + hhmm(live.btcAt)) : "Fontes: CoinGecko, mempool.space, alternative.me";
+  String foot = live.btcOk ? ((live.btcBrl > 0 ? "R$ " + fmtNum(live.btcBrl, 0) + " · " : String("")) + "US$ 1 = " + fmtNum(1e8 / live.btc, 0) + " sats · " + hhmm(live.btcAt))
+                           : "Fontes: CoinGecko, mempool.space, alternative.me";
   text(8, 220, foot, F_BM11, C_MUTED, C_BG);
 }
 
+static const char* compass(int az) {           // wind: where it comes from; ISS: where it rises/sets
+  static const char* P[8] = {"N", "NE", "L", "SE", "S", "SO", "O", "NO"};
+  return P[((az % 360) + 22) / 45 % 8];
+}
+static String uvText(float uv) {
+  int u = (int)(uv + 0.5f);
+  return String(u) + (u <= 2 ? " baixo" : u <= 5 ? " moderado" : u <= 7 ? " alto" : u <= 10 ? " muito alto" : " extremo");
+}
 static void drawClima() {
   header("CLIMA");
-  card(8, 32, 304, 90);
+  card(8, 30, 304, 88);
   if (live.wxOk) {
-    iconWeather(16, 44, 56, live.wxCode);
-    text(84, 40, fmtNum(live.wxTemp, 0) + "°", F_CB46, C_INK, C_CARD);
-    int x = 84 + tw(fmtNum(live.wxTemp, 0) + "°", F_CB46) + 14;
-    text(x, 46, wxText(live.wxCode), F_BS13, C_INK, C_CARD);
-    text(x, 66, "Umidade " + String(live.wxHum) + "%", F_BM11, C_MUTED, C_CARD);
-    text(x, 82, "Vento " + fmtNum(live.wxWind, 0) + " km/h", F_BM11, C_MUTED, C_CARD);
+    iconWeather(14, 40, 44, live.wxCode);
+    String t = fmtNum(live.wxTemp, 0) + "°";
+    text(64, 32, t, F_CB46, C_INK, C_CARD);
+    text(16, 88, "Sensação " + fmtNum(live.wxFeels, 0) + "°", F_BM11, C_MUTED, C_CARD);
+    if (live.wxSunrise.length()) text(16, 102, "Sol " + live.wxSunrise + " – " + live.wxSunset, F_BM11, C_MUTED, C_CARD);
+    String w = wxText(live.wxCode);
+    int x = 172;
+    text(x, 36, w, fit(w, 134, F_BS13, F_BM11), C_INK, C_CARD);
+    text(x, 56, "Umidade " + String(live.wxHum) + "%", F_BM11, C_MUTED, C_CARD);
+    text(x, 70, "Vento " + String(compass(live.wxDir)) + " " + fmtNum(live.wxWind, 0) + " km/h", F_BM11, C_MUTED, C_CARD);
+    if (live.wxRainProb >= 0) text(x, 84, "Chuva hoje " + String(live.wxRainProb) + "%" + (live.wxRain > 0.05f ? " · " + fmtNum(live.wxRain, 1) + " mm" : ""), F_BM11, live.wxRainProb >= 60 ? C_BLUE : C_MUTED, C_CARD);
+    if (live.wxUv >= 0) text(x, 98, "UV " + uvText(live.wxUv), F_BM11, live.wxUv >= 6 ? C_ORT : C_MUTED, C_CARD);
+    // next hours
+    card(8, 122, 304, 58);
+    for (int i = 0; i < live.hN; i++) {
+      int x0 = 8 + i * 50 + 2;
+      if (i) spr.drawFastVLine(x0 - 1, 128 - yoff, 46, C_SOFT);
+      text(x0 + 24, 126, String(live.hHour[i]) + "h", F_BM11, C_MUTED, C_CARD, 1);
+      iconWeather(x0 + 4, 139, 20, live.hCode[i]);
+      if (live.hProb[i] >= 10) text(x0 + 46, 144, String(live.hProb[i]) + "%", F_BM11, C_BLUE, C_CARD, 2);
+      text(x0 + 24, 162, fmtNum(live.hTemp[i], 0) + "°", F_BS13, C_INK, C_CARD, 1);
+    }
+    // next days
     for (int i = 1; i <= 3; i++) {
       int x0 = 8 + (i - 1) * 104;
-      card(x0, 128, 96, 82);
-      text(x0 + 48, 133, live.dDay[i], F_BS13, C_INK, C_CARD, 1);
-      iconWeather(x0 + 33, 150, 30, live.dCode[i]);
-      text(x0 + 48, 186, fmtNum(live.dMax[i], 0) + "° / " + fmtNum(live.dMin[i], 0) + "°", F_BS13, C_INK, C_CARD, 1);
+      card(x0, 184, 96, 32);
+      text(x0 + 7, 192, live.dDay[i], F_BS13, C_INK, C_CARD);
+      iconWeather(x0 + 36, 190, 20, live.dCode[i]);
+      text(x0 + 90, 193, fmtNum(live.dMax[i], 0) + "°/" + fmtNum(live.dMin[i], 0) + "°", F_BM11, C_INK, C_CARD, 2);
     }
   } else {
     text(160, 66, wifiUp ? (cfg.city.length() ? "carregando…" : "localizando pelo IP…") : "sem Wi-Fi", F_BS16, C_MUTED, C_CARD, 1);
   }
-  text(8, 220, "Open-Meteo · " + (live.wxPlace.length() ? live.wxPlace : cfg.city) + (live.wxByIp ? " (pelo IP)" : "") + (live.wxOk ? " · " + hhmm(live.wxAt) : ""), F_BM11, C_MUTED, C_BG);
+  text(8, 222, "Open-Meteo · " + (live.wxPlace.length() ? live.wxPlace : cfg.city) + (live.wxByIp ? " (pelo IP)" : "") + (live.wxOk ? " · " + hhmm(live.wxAt) : ""), F_BM11, C_MUTED, C_BG);
 }
 
 static void drawRedes() {
@@ -721,73 +753,18 @@ static void drawAgente() {
 }
 
 // ---------- games ----------
-static const int SN_COLS = 20, SN_ROWS = 13, SN_CELL = 16, SN_Y = 26;
-static int8_t snX[260], snY[260];
-static int snLen = 0, snDir = 0, snNext = 0, foodX = 0, foodY = 0, snScore = 0;
-static bool snDead = false;
-static uint32_t snTick = 0;
-static void snakeReset() {
-  snLen = 4; snDir = snNext = 0; snScore = 0; snDead = false;
-  for (int i = 0; i < snLen; i++) { snX[i] = 8 - i; snY[i] = 6; }
-  foodX = 14; foodY = 6;
-}
-static void snakeStep() {
-  if (snDead) return;
-  snDir = snNext;
-  int dx[4] = {1, 0, -1, 0}, dy[4] = {0, 1, 0, -1};
-  int nx = snX[0] + dx[snDir], ny = snY[0] + dy[snDir];
-  if (nx < 0 || ny < 0 || nx >= SN_COLS || ny >= SN_ROWS) { snDead = true; }
-  for (int i = 0; i < snLen && !snDead; i++) if (snX[i] == nx && snY[i] == ny) snDead = true;
-  if (snDead) {
-    if (snScore > cfg.snakeBest) { cfg.snakeBest = snScore; configSave(); }
-    beep(600, 200);
-    return;
-  }
-  bool eat = nx == foodX && ny == foodY;
-  if (eat && snLen < 259) snLen++;
-  for (int i = snLen - 1; i > 0; i--) { snX[i] = snX[i - 1]; snY[i] = snY[i - 1]; }
-  snX[0] = nx; snY[0] = ny;
-  if (eat) {
-    snScore++;
-    beep(2800, 25);
-    for (int t = 0; t < 100; t++) {
-      foodX = random(SN_COLS); foodY = random(SN_ROWS);
-      bool on = false;
-      for (int i = 0; i < snLen; i++) if (snX[i] == foodX && snY[i] == foodY) on = true;
-      if (!on) break;
-    }
-  }
-}
-static void drawSnake() {
-  rect(0, 0, 320, 24, C_CARD);
-  text(8, 4, "‹ Jogos", F_BS13, C_BLUE, C_CARD);
-  text(160, 5, "SNAKE · " + String(snScore), F_CS12, C_INK, C_CARD, 1);
-  text(312, 5, "recorde " + String(cfg.snakeBest), F_CS12, C_MUTED, C_CARD, 2);
-  rect(0, 24, 320, 2, C_OR);
-  rect(0, SN_Y, 320, SN_ROWS * SN_CELL, C_SOFT);
-  rrect(foodX * SN_CELL + 3, SN_Y + foodY * SN_CELL + 3, 10, 10, 5, C_OR, C_OR);
-  for (int i = snLen - 1; i >= 0; i--)
-    rrect(snX[i] * SN_CELL + 1, SN_Y + snY[i] * SN_CELL + 1, 14, 14, 3, i == 0 ? C_INK : C_GREEN, i == 0 ? C_INK : C_GREEN);
-  if (snDead) {
-    rrect(60, 90, 200, 60, 8, C_INK, C_INK);
-    text(160, 98, "Fim de jogo · " + String(snScore), F_BS16, C_WHITE, C_INK, 1);
-    text(160, 122, "toque pra jogar de novo", F_BM11, C_WHITE, C_INK, 1);
-  }
-}
-
 static void drawJogos() {
   header("JOGOS");
-  const char* n[4] = {"Snake", "Tanques", "2048", "Pong"};
-  const char* d[4] = {"Toque na direção", "Artilharia contra a placa", "em breve", "em breve"};
+  const char* n[4] = {"Tanques", "2048", "Pong", "Mais"};
+  const char* d[4] = {"Artilharia contra a placa", "em breve", "em breve", "em breve"};
   for (int i = 0; i < 4; i++) {
     int x = 8 + (i % 2) * 156, y = 32 + (i / 2) * 78;
-    bool live_ = i <= 1;
+    bool live_ = i == 0;
     rrect(x, y, 148, 72, 6, live_ ? C_OR : C_CARD, live_ ? C_OR : C_LINE);
     text(x + 12, y + 12, n[i], F_CB24, live_ ? C_INK : C_MUTED, live_ ? C_OR : C_CARD);
     text(x + 12, y + 46, d[i], F_BM11, live_ ? C_INK : C_MUTED, live_ ? C_OR : C_CARD);
   }
-  text(8, 196, "Recorde no Snake: " + String(cfg.snakeBest), F_BS13, C_INK, C_BG);
-  text(8, 220, "Recordes ficam salvos na placa", F_BM11, C_MUTED, C_BG);
+  text(8, 220, "Jogos de toque, feitos pra tela pequena", F_BM11, C_MUTED, C_BG);
 }
 
 
@@ -1069,7 +1046,7 @@ static void drawIr() {
   }
   card(8, 178, 304, 30);
   text(18, 185, "LED IR não instalado ainda", F_BS13, C_ORT, C_CARD);
-  text(8, 220, "Ligue um LED IR no conector CN1 (GPIO27) pra ativar", F_BM11, C_MUTED, C_BG);
+  text(8, 220, "Em breve: o envio de IR ainda não está no firmware", F_BM11, C_MUTED, C_BG);
 }
 
 static String ago(uint32_t t) {
@@ -1147,13 +1124,25 @@ static void drawAgenda() {
   }
   agFoot();
 }
+static void newsFoot() {
+  if (!cfg.rssUrls.length()) { plFoot(); return; }
+  String f;
+  if (live.rssErr.length() && !live.rssOk) f = live.rssErr;
+  else if (live.rssOk) {
+    String src;
+    for (int i = 0; i < live.nwN; i++) if (live.nwF[i].length() && src.indexOf(live.nwF[i]) < 0) src += (src.length() ? ", " : "") + live.nwF[i];
+    f = src + " · " + hhmm(live.rssAt);
+    if (tw(f, F_BM11) > 304) f = "RSS · atualizado " + hhmm(live.rssAt);
+  } else f = "lendo o RSS…";
+  text(8, 222, f, F_BM11, live.rssErr.length() && !live.rssOk ? C_ORT : C_MUTED, C_BG);
+}
 static void drawNews() {
   header("MANCHETES");
   if (!live.nwN) {
-    card(8, 32, 304, 80);
+    card(8, 32, 304, 96);
     text(18, 42, "Sem manchetes ainda", F_BS16, C_INK, C_CARD);
-    wrap(18, 66, 284, "As manchetes vêm do feed do seu servidor.", F_BM13, C_MUTED, C_CARD, 17, 2);
-    plFoot();
+    wrap(18, 66, 284, cfg.rssUrls.length() ? "Lendo os links RSS…" : "Cole até 3 links RSS em Config › Pelo celular, ou mande as manchetes pelo feed do seu servidor.", F_BM13, C_MUTED, C_CARD, 17, 3);
+    newsFoot();
     return;
   }
   card(8, 30, 304, 186);
@@ -1163,7 +1152,7 @@ static void drawNews() {
     text(18, y + 6, String(i + 1), F_CB18, C_OR, C_CARD);
     wrap(40, y + 4, 264, live.nwT[i], F_BM13, C_INK, C_CARD, 15, 2);
   }
-  plFoot();
+  newsFoot();
 }
 static void drawMaq() {
   header("MÁQUINAS");
@@ -1288,21 +1277,33 @@ static void drawPihole() {
     wrap(18, 66, 284, "Coloque o endereço do Pi-hole (ex: http://192.168.1.50) e a senha em Config › Pelo celular.", F_BM13, C_MUTED, C_CARD, 17, 3);
     return;
   }
-  rrect(8, 32, 304, 60, 6, C_INK, C_INK);
-  text(18, 38, live.phOk ? fmtNum(live.phPct, 1) + "%" : "—", F_CB34, C_WHITE, C_INK);
-  text(170, 44, "das consultas", F_BM11, C_WHITE, C_INK);
-  text(170, 59, "bloqueadas hoje", F_BM11, C_WHITE, C_INK);
+  rrect(8, 30, 304, 46, 6, C_INK, C_INK);
+  text(16, 34, live.phOk ? fmtNum(live.phPct, 1) + "%" : "—", F_CB34, C_WHITE, C_INK);
+  text(160, 36, "bloqueadas hoje", F_BM11, C_WHITE, C_INK);
   if (live.phOk) {
-    rrect(18, 80, 284, 6, 3, C_MUTED, C_MUTED);
-    rrect(18, 80, max(6, (int)(284 * live.phPct / 100)), 6, 3, C_OR, C_OR);
+    text(160, 50, fmtNum(live.phBlocked, 0) + " de " + fmtNum(live.phTotal, 0), F_BM11, C_PEACH, C_INK);
+    rrect(160, 66, 142, 4, 2, C_MUTED, C_MUTED);
+    rrect(160, 66, max(4, (int)(142 * live.phPct / 100)), 4, 2, C_OR, C_OR);
   }
-  const char* lab[4] = {"Consultas hoje", "Bloqueadas", "Clientes ativos", "Domínios na lista"};
-  long val[4] = {live.phTotal, live.phBlocked, (long)live.phClients, live.phDomains};
-  for (int i = 0; i < 4; i++) {
-    int x = 8 + (i % 2) * 156, y = 100 + (i / 2) * 56;
-    card(x, y, 148, 50);
-    text(x + 10, y + 6, lab[i], F_BM11, C_MUTED, C_CARD);
-    text(x + 10, y + 21, live.phOk && val[i] >= 0 ? fmtNum(val[i], 0) : "—", F_CB18, C_INK, C_CARD);
+  card(8, 80, 304, 26);
+  text(16, 86, "Clientes ativos", F_BM11, C_MUTED, C_CARD);
+  text(150, 85, live.phOk && live.phClients >= 0 ? String(live.phClients) : "—", F_BS13, C_INK, C_CARD, 2);
+  text(166, 86, "Na lista", F_BM11, C_MUTED, C_CARD);
+  text(304, 85, live.phOk && live.phDomains >= 0 ? fmtNum(live.phDomains, 0) : "—", F_BS13, C_INK, C_CARD, 2);
+  card(8, 110, 304, 106);
+  text(16, 114, "MAIS BLOQUEADOS HOJE", F_BM11, C_MUTED, C_CARD);
+  if (!live.phTopN) text(16, 140, live.phOk ? "sem lista (precisa do Pi-hole v6)" : "—", F_BM11, C_MUTED, C_CARD);
+  for (int i = 0; i < live.phTopN; i++) {
+    int y = 130 + i * 17;
+    if (i) hline(9, y - 2, 302, C_SOFT);
+    String c = fmtNum(live.phTopC[i], 0);
+    int cw = tw(c, F_BS13);
+    String d = live.phTop[i];
+    const uint8_t* f = fit(d, 280 - cw, F_BM13, F_BM11);
+    while (d.length() > 4 && tw(d, f) > 280 - cw) d = d.substring(1);   // keep the end: it names the company
+    if (d != live.phTop[i]) d = "…" + d.substring(1);
+    text(16, y, d, f, C_INK, C_CARD);
+    text(304, y, c, F_BS13, C_ORT, C_CARD, 2);
   }
   String foot = live.phOk ? "Rede local · atualizado " + hhmm(live.phAt) : (live.phErr.length() ? live.phErr : "carregando…");
   text(8, 222, foot, F_BM11, live.phOk ? C_MUTED : C_ORT, C_BG);
@@ -1699,10 +1700,6 @@ static void drawAvisos() {
 }
 
 // ---------- radio ----------
-static const char* compass(int az) {
-  static const char* P[8] = {"N", "NE", "L", "SE", "S", "SO", "O", "NO"};
-  return P[((az % 360) + 22) / 45 % 8];
-}
 static void condChip(int x, int y, uint8_t c) {
   const char* lab[4] = {"—", "ruim", "regular", "boa"};
   uint16_t col = c == 3 ? C_GREEN : c == 2 ? C_WARN : c == 1 ? C_RED : C_SOFT;
@@ -1816,7 +1813,6 @@ static void drawScreen() {
     case S_CASA: drawCasa(); break;
     case S_AGENTE: drawAgente(); break;
     case S_JOGOS: drawJogos(); break;
-    case S_SNAKE: drawSnake(); break;
     case S_IR: drawIr(); break;
     case S_MESH: drawMesh(); break;
     case S_PIHOLE: drawPihole(); break;
@@ -1840,11 +1836,11 @@ static void drawScreen() {
     case S_SSH: drawSsh(); break;
     case S_TANKS: drawTanks(); break;
   }
-  if (curScreen != S_CAL && curScreen != S_SNAKE && curScreen != S_SSH) drawToast();
+  if (curScreen != S_CAL && curScreen != S_SSH) drawToast();
 }
 
 static void render() {
-  bool scan = screenChanged && anim() && curScreen != S_SNAKE && curScreen != S_CAL && curScreen != S_TANKS && curScreen != S_SSH;
+  bool scan = screenChanged && anim() && curScreen != S_CAL && curScreen != S_TANKS && curScreen != S_SSH;
   screenChanged = false;
   curX = -1; curOn = false; pulseN = 0;
   xSemaphoreTake(dataLock, portMAX_DELAY);
@@ -1963,7 +1959,6 @@ void uiGoto(int s) {
   int prev = curScreen;
   curScreen = s;
   if (prev != s) screenChanged = true;
-  if (s == S_SNAKE) snakeReset();
   if (s == S_CAL) calStep = 0;
   if (s == S_CASA || s == S_PIHOLE) netRequestRefresh();
   if (s == S_AGENDA || s == S_NEWS || s == S_MAQ) netRequestPlaca();
@@ -2002,15 +1997,6 @@ void uiTap(int x, int y) {
         uiGoto(homeDock[i]);
       }
       return;
-    case S_SNAKE: {
-      if (y < 26 && x < 80) { uiGoto(S_JOGOS); return; }
-      if (snDead) { snakeReset(); redraw = true; return; }
-      int hx = snX[0] * SN_CELL + 8, hy = SN_Y + snY[0] * SN_CELL + 8;
-      int dx = x - hx, dy = y - hy;
-      int nd = abs(dx) > abs(dy) ? (dx > 0 ? 0 : 2) : (dy > 0 ? 1 : 3);
-      if ((nd + 2) % 4 != snDir) snNext = nd;
-      return;
-    }
     case S_QR:
       if (y < 26 && x < 90) uiGoto(S_CONFIG);
       return;
@@ -2114,13 +2100,12 @@ void uiTap(int x, int y) {
       }
       break;
     case S_JOGOS:
-      if (in(x, y, 8, 32, 148, 72)) uiGoto(S_SNAKE);
-      else if (in(x, y, 164, 32, 148, 72)) uiGoto(S_TANKS);
+      if (in(x, y, 8, 32, 148, 72)) uiGoto(S_TANKS);
       else if (y > 30 && y < 190) toast("Esse jogo chega numa próxima versão");
       break;
     case S_IR:
       if (y >= 30 && y < 62) { irDev = constrain((x - 8) / 102, 0, 2); redraw = true; }
-      else if (y >= 66 && y < 172) toast("Sem LED IR: ligue um no CN1 (GPIO27)");
+      else if (y >= 66 && y < 172) toast("Controle IR: em breve");
       break;
     case S_CONFIG:
       if (in(x, y, 8, 30, 304, 28)) { uiGoto(S_WIFI); return; }
@@ -2269,8 +2254,6 @@ void uiLoop() {
   }
   // terminal: redraw when the screen changed, at most ~20 times a second
   if (curScreen == S_SSH && vt.version != tmVersion && millis() - tmLastDraw > 50) { tmVersion = vt.version; tmLastDraw = millis(); redraw = true; }
-  // snake tick
-  if (curScreen == S_SNAKE && !snDead && millis() - snTick > 170) { snTick = millis(); snakeStep(); redraw = true; }
   // clock / toast expiry
   uint32_t minuteNow = (uint32_t)(time(nullptr) / 60);
   if (minuteNow != lastMinuteDraw) { lastMinuteDraw = minuteNow; redraw = true; }
@@ -2295,7 +2278,7 @@ void uiLoop() {
   if (fresh != lastFresh) { lastFresh = fresh; redraw = true; }
   if (redraw) { redraw = false; render(); }
   // terminal effects between frames: blinking cursor and pulsing machine dots
-  if (anim() && curScreen != S_CAL && curScreen != S_SNAKE && !(isNight() && millis() > wakeUntil)) {
+  if (anim() && curScreen != S_CAL && !(isNight() && millis() > wakeUntil)) {
     if (curX > 0 && millis() - lastBlink > 530) {
       lastBlink = millis(); curOn = !curOn;
       lcd.fillRect(curX, curY + 1, 7, 13, curOn ? C_GREEN : curBg);

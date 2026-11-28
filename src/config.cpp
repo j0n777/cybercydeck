@@ -22,6 +22,7 @@ void configLoad() {
   bool migrate = prefs.getUChar("modsv", 0) < 3;
   cfg.feedToken = gs("feedtok");
   cfg.icalUrl = gs("ical");
+  cfg.rssUrls = gs("rss");
   cfg.alertBeep = prefs.getBool("abeep", false);
   cfg.nightDim = prefs.getBool("night", true);
   cfg.haUrl = gs("haurl"); cfg.haToken = gs("hatok");
@@ -49,7 +50,6 @@ void configLoad() {
   cfg.calSwap = prefs.getBool("calsw", false);
   cfg.calAx = prefs.getFloat("calax", 0); cfg.calBx = prefs.getFloat("calbx", 0);
   cfg.calAy = prefs.getFloat("calay", 0); cfg.calBy = prefs.getFloat("calby", 0);
-  cfg.snakeBest = prefs.getInt("snake", 0);
   prefs.end();
   if (migrate) {
     // 0.3: new modules on; IR and Mesh off until the hardware exists
@@ -82,6 +82,7 @@ void configSave() {
   prefs.putUChar("modsv", 3);
   prefs.putString("feedtok", cfg.feedToken);
   prefs.putString("ical", cfg.icalUrl);
+  prefs.putString("rss", cfg.rssUrls);
   prefs.putBool("abeep", cfg.alertBeep);
   prefs.putBool("night", cfg.nightDim);
   prefs.putString("haurl", cfg.haUrl); prefs.putString("hatok", cfg.haToken);
@@ -107,7 +108,6 @@ void configSave() {
   prefs.putBool("calsw", cfg.calSwap);
   prefs.putFloat("calax", cfg.calAx); prefs.putFloat("calbx", cfg.calBx);
   prefs.putFloat("calay", cfg.calAy); prefs.putFloat("calby", cfg.calBy);
-  prefs.putInt("snake", cfg.snakeBest);
   prefs.end();
 }
 

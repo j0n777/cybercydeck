@@ -3,7 +3,7 @@
 #include "board.h"
 #include "vt.h"
 
-#define FW_VERSION "0.3.0"
+#define FW_VERSION "0.4.0"
 #define UPDATE_REPO "j0n777/cybercydeck"   // GitHub releases the board updates from (change it in a fork)
 #define PROJECT_NAME "CyberCYDeck"
 #define AP_SSID "CyberCYDeck"
@@ -22,6 +22,7 @@ struct Config {
   uint16_t mods = 0xF3F;      // enabled modules, see M_* below (IR and Mesh off by default)
   String feedToken;           // sent as "Authorization: Bearer <token>" to the feed
   String icalUrl;             // calendar .ics link (Google: "secret address in iCal format"); replaces the feed agenda
+  String rssUrls;             // up to 3 RSS/Atom links, one per line: headlines without a feed server
   bool alertBeep = false;     // beep on alerts (never at night)
   bool nightDim = true;       // dim the backlight from 23h to 7h
   String haUrl, haToken;
@@ -41,7 +42,6 @@ struct Config {
   bool calOk = false;
   bool calSwap = false;
   float calAx = 0, calBx = 0, calAy = 0, calBy = 0;
-  int snakeBest = 0;
 };
 extern Config cfg;
 // modules that can be switched on/off (Config > Módulos or the web form)
@@ -55,12 +55,14 @@ void configFactoryReset();
 // ---------- live data ----------
 struct LiveData {
   bool btcOk = false;
-  float btc = 0, btcChg = 0, eth = 0, ethChg = 0, sol = 0, solChg = 0;
+  float btc = 0, btcChg = 0, eth = 0, ethChg = 0, sol = 0, solChg = 0, btcBrl = 0;
   int feeSlow = 0, feeStd = 0, feeFast = 0;
   int fng = -1; String fngLabel;
   uint32_t btcAt = 0;          // epoch seconds of last fetch
   bool wxOk = false;
   float wxTemp = 0; int wxHum = 0; float wxWind = 0; int wxCode = 0;
+  float wxFeels = 0, wxRain = 0, wxUv = -1; int wxDir = 0, wxRainProb = -1; String wxSunrise, wxSunset;   // today
+  int hHour[6] = {0}; float hTemp[6] = {0}; int hProb[6] = {0}, hCode[6] = {0}; int hN = 0;          // next hours
   String wxPlace; bool wxByIp = false;   // place name; true when located by the IP address
   float dMax[4] = {0}, dMin[4] = {0}; int dCode[4] = {0}; String dDay[4];
   uint32_t wxAt = 0;
@@ -78,6 +80,8 @@ struct LiveData {
   int agN = 0; String agT[3]; uint32_t agQ[3] = {0}; bool agDia[3] = {false};
   bool icOk = false; uint32_t icAt = 0; String icErr;   // agenda read from the iCal link
   int nwN = 0; String nwT[5], nwF[5];
+  bool rssOk = false; uint32_t rssAt = 0; String rssErr;          // headlines read from RSS links
+  int phTopN = 0; String phTop[5]; long phTopC[5] = {0};          // Pi-hole: most blocked domains today
   int mqN = 0; String mqNome[5]; int mqCpu[5] = {0}, mqRam[5] = {0}, mqTemp[5] = {0}, mqDisk[5] = {0}; uint32_t mqAge[5] = {0}; bool mqOn[5] = {false};
   float iaCusto = -1; double iaTokens = -1; int iaN = 0; String iaNome[4]; float iaC[4] = {0};
   // cyberdeck host (Orange Pi / Raspberry Pi) talking over the USB serial, see docs/deck-protocol.md

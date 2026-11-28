@@ -47,6 +47,8 @@ static void handleCommand(String cmd) {
     else if (k == "mods") cfg.mods = (uint16_t)strtol(v.c_str(), nullptr, 16);
     else if (k == "token") cfg.feedToken = v;
     else if (k == "ical") cfg.icalUrl = v;
+    else if (k == "rss") { v.replace("|", "\n"); cfg.rssUrls = v; }   // several links separated by |
+
     else if (k == "feed") cfg.feedUrl = v;
     else if (k == "nome") cfg.nome = v;
     else if (k == "night") cfg.nightDim = v.toInt();

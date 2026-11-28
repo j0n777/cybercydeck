@@ -33,9 +33,10 @@ jobs:
         with:
           path: ~/.platformio
           key: pio-${{ hashFiles('platformio.ini') }}
-      - name: Tests (iCal reader, terminal)
+      - name: Tests (iCal reader, RSS reader, terminal)
         run: |
           g++ -Wall -o /tmp/ical-test tests/ical/teste.cpp src/ical.cpp && /tmp/ical-test tests/ical/exemplo.ics
+          g++ -Wall -o /tmp/rss-test tests/rss/teste.cpp src/rss.cpp && /tmp/rss-test
           g++ -Wall -o /tmp/vt-test tests/vt/teste.cpp src/vt.cpp && /tmp/vt-test
       - name: Build
         run: |
@@ -95,6 +96,7 @@ jobs:
     needs: build
     if: github.ref == 'refs/heads/main' && (needs.build.outputs.new == 'true' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
+    continue-on-error: true   # until Pages is enabled (Settings > Pages > Source: GitHub Actions) this step fails; the release is already out
     environment:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
